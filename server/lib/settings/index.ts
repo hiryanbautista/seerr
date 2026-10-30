@@ -329,6 +329,7 @@ export enum NotificationAgentKey {
   DISCORD = 'discord',
   EMAIL = 'email',
   GOTIFY = 'gotify',
+  IOS = 'ios',
   NTFY = 'ntfy',
   PUSHBULLET = 'pushbullet',
   PUSHOVER = 'pushover',
@@ -342,6 +343,7 @@ interface NotificationAgents {
   discord: NotificationAgentDiscord;
   email: NotificationAgentEmail;
   gotify: NotificationAgentGotify;
+  ios: NotificationAgentConfig;
   ntfy: NotificationAgentNtfy;
   pushbullet: NotificationAgentPushbullet;
   pushover: NotificationAgentPushover;
@@ -547,6 +549,11 @@ class Settings {
           webpush: {
             enabled: false,
             embedPoster: true,
+            options: {},
+          },
+          ios: {
+            enabled: false,
+            embedPoster: false,
             options: {},
           },
           gotify: {

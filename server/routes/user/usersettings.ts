@@ -5,6 +5,7 @@ import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
+import { UserIOSDevice } from '@server/entity/UserIOSDevice';
 import { UserSettings } from '@server/entity/UserSettings';
 import type {
   UserSettingsGeneralResponse,
@@ -616,6 +617,12 @@ userSettingsRoutes.get<{ id: string }, UserSettingsNotificationsResponse>(
             ? settings.discord.types
             : 0,
         discordIds: user.settings?.discordIds ?? [],
+        iOSDeviceToken: (
+          await getRepository(UserIOSDevice).findOne({
+            where: { user: { id: user.id } },
+            order: { id: 'DESC' },
+          })
+        )?.token,
         pushbulletAccessToken: user.settings?.pushbulletAccessToken,
         pushoverApplicationToken: user.settings?.pushoverApplicationToken,
         pushoverUserKey: user.settings?.pushoverUserKey,
@@ -694,9 +701,26 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
 
       await userRepository.save(user);
 
+      // Fork-only: register the iOS app's APNs token. A token belongs to one
+      // device, so re-registering moves it to whoever is signed in now.
+      const iOSDeviceToken = req.body.iOSDeviceToken;
+      if (typeof iOSDeviceToken === 'string' && iOSDeviceToken !== '') {
+        const deviceRepository = getRepository(UserIOSDevice);
+        const device =
+          (await deviceRepository.findOne({
+            where: { token: iOSDeviceToken },
+          })) ?? new UserIOSDevice({ token: iOSDeviceToken });
+        device.user = user;
+        await deviceRepository.save(device);
+      }
+
       return res.status(200).json({
         pgpKey: user.settings.pgpKey,
         discordIds: user.settings.discordIds ?? [],
+        iOSDeviceToken:
+          typeof iOSDeviceToken === 'string' && iOSDeviceToken !== ''
+            ? iOSDeviceToken
+            : undefined,
         pushbulletAccessToken: user.settings.pushbulletAccessToken,
         pushoverApplicationToken: user.settings.pushoverApplicationToken,
         pushoverUserKey: user.settings.pushoverUserKey,

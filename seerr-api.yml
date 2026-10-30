@@ -1543,6 +1543,15 @@ components:
               type: string
             sound:
               type: string
+    iOSSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: false
+        types:
+          type: number
+          example: 2
     GotifySettings:
       type: object
       properties:
@@ -1987,6 +1996,9 @@ components:
           items:
             type: string
           nullable: true
+        iOSDeviceToken:
+          type: string
+          nullable: true
         pushbulletAccessToken:
           type: string
           nullable: true
@@ -2019,6 +2031,8 @@ components:
         discord:
           type: number
         email:
+          type: number
+        ios:
           type: number
         pushbullet:
           type: number
@@ -3821,6 +3835,52 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/WebPushSettings'
+      responses:
+        '204':
+          description: Test notification attempted
+  /settings/notifications/ios:
+    get:
+      summary: Get iOS notification settings
+      description: Returns current iOS (APNs) notification settings in a JSON object.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Returned iOS settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/iOSSettings'
+    post:
+      summary: Update iOS notification settings
+      description: Updates iOS (APNs) notification settings with the provided values.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/iOSSettings'
+      responses:
+        '200':
+          description: 'Values were sucessfully updated'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/iOSSettings'
+  /settings/notifications/ios/test:
+    post:
+      summary: Test iOS settings
+      description: Sends a test push to the requesting user's registered iOS devices.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/iOSSettings'
       responses:
         '204':
           description: Test notification attempted

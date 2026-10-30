@@ -10,6 +10,7 @@ import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
 import GotifyAgent from '@server/lib/notifications/agents/gotify';
+import iOSAgent from '@server/lib/notifications/agents/ios';
 import NtfyAgent from '@server/lib/notifications/agents/ntfy';
 import PushbulletAgent from '@server/lib/notifications/agents/pushbullet';
 import PushoverAgent from '@server/lib/notifications/agents/pushover';
@@ -142,6 +143,7 @@ app
       new DiscordAgent(),
       new EmailAgent(),
       new GotifyAgent(),
+      new iOSAgent(),
       new NtfyAgent(),
       new PushbulletAgent(),
       new PushoverAgent(),

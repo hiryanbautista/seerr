@@ -99,6 +99,7 @@ export class UserSettings {
           telegram: 0,
           webhook: 0,
           webpush: ALL_NOTIFICATIONS,
+          ios: ALL_NOTIFICATIONS,
         };
         if (!value) {
           return defaultTypes;
@@ -119,6 +120,10 @@ export class UserSettings {
 
         if (values.webpush == null) {
           values.webpush = ALL_NOTIFICATIONS;
+        }
+
+        if (values.ios == null) {
+          values.ios = ALL_NOTIFICATIONS;
         }
 
         return values;
