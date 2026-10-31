@@ -9,6 +9,7 @@ import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
+import { UserIOSDevice } from '@server/entity/UserIOSDevice';
 import { UserPushSubscription } from '@server/entity/UserPushSubscription';
 import { UserSettings } from '@server/entity/UserSettings';
 import { Watchlist } from '@server/entity/Watchlist';
@@ -37,6 +38,7 @@ const entities = [
   Session,
   User,
   UserPushSubscription,
+  UserIOSDevice,
   UserSettings,
   Watchlist,
 ];

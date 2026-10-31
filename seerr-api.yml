@@ -1543,6 +1543,15 @@ components:
               type: string
             sound:
               type: string
+    iOSSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: false
+        types:
+          type: number
+          example: 2
     GotifySettings:
       type: object
       properties:
@@ -1987,6 +1996,9 @@ components:
           items:
             type: string
           nullable: true
+        iOSDeviceToken:
+          type: string
+          nullable: true
         pushbulletAccessToken:
           type: string
           nullable: true
@@ -2019,6 +2031,8 @@ components:
         discord:
           type: number
         email:
+          type: number
+        ios:
           type: number
         pushbullet:
           type: number
@@ -3824,6 +3838,52 @@ paths:
       responses:
         '204':
           description: Test notification attempted
+  /settings/notifications/ios:
+    get:
+      summary: Get iOS notification settings
+      description: Returns current iOS (APNs) notification settings in a JSON object.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Returned iOS settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/iOSSettings'
+    post:
+      summary: Update iOS notification settings
+      description: Updates iOS (APNs) notification settings with the provided values.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/iOSSettings'
+      responses:
+        '200':
+          description: 'Values were sucessfully updated'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/iOSSettings'
+  /settings/notifications/ios/test:
+    post:
+      summary: Test iOS settings
+      description: Sends a test push to the requesting user's registered iOS devices.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/iOSSettings'
+      responses:
+        '204':
+          description: Test notification attempted
   /settings/notifications/webhook:
     get:
       summary: Get webhook notification settings
@@ -5425,6 +5485,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserSettingsNotifications'
+  /user/{userId}/settings/notifications/ios-device:
+    delete:
+      summary: Remove an iOS device token from a user
+      description: Removes the APNs token from the user if it is registered to them (iOS sign-out). Returns 204 whether or not it was registered.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+              required:
+                - token
+      responses:
+        '204':
+          description: Token removed (or was not registered to this user)
+        '400':
+          description: Malformed token
   /user/{userId}/settings/permissions:
     get:
       summary: Get permission settings for a user
