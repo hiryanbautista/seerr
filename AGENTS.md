@@ -17,6 +17,7 @@ It replaces the old Overseerr fork at `../overseerr` and backs the iOS app at `.
 - Routes: `/settings/notifications/ios[/test]` in `server/routes/settings/notifications.ts`. `iOSDeviceToken` (hex, 64–200 chars, stored lowercase) is accepted and returned by `/user/{id}/settings/notifications`; `DELETE /user/{id}/settings/notifications/ios-device` `{token}` removes one device (`server/routes/user/usersettings.ts`).
 - Spec: `seerr-api.yml` (`iOSSettings`, the paths above, `iOSDeviceToken`, `NotificationAgentTypes.ios`). The OpenAPI validator rejects anything that isn't in the spec.
 - `.github/workflows/docker-image.yml`.
+- Unraid deploy: `scripts/deploy-unraid.sh`, `scripts/unraid-deploy.sh`, `.claude/skills/deploy-unraid/SKILL.md` (copied from prefect-remote).
 
 ## Commands
 Node `^22.19` (engine-strict). nvm has 22.23.4; run `nvm use 22.23.4` first. pnpm 10 is installed through Homebrew.
@@ -41,6 +42,28 @@ Node `^22.19` (engine-strict). nvm has 22.23.4; run `nvm use 22.23.4` first. pnp
 - **The container runs as `node` (uid 1000), not root.** The host config dir must be writable by uid 1000.
 - Env: `APNS_KEY` (p8 body, `\n` escaped) and `APNS_ENV=prod` for production APNs (any other value means sandbox). Key ID, Team ID and topic are constants in `ios.ts`.
 - Repo variables `SEERR_MAJOR`/`SEERR_MINOR` and secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `REPO_ACCESS_TOKEN` need to be set on hiryanbautista/seerr. Once Actions is enabled, disable every upstream workflow except Docker Image CI (`gh workflow disable -R hiryanbautista/seerr <name>`).
+
+## Deploying to Unraid
+`scripts/deploy-unraid.sh [vX.0.Y]` switches the Unraid container to a published tag over WireGuard and applies it. No argument means the newest tag; an older tag rolls back. The skill is `deploy-unraid`. Agents never create keys or VPN configs. On an SSH or WireGuard failure, report it rather than routing around the forced-command key. The image's PID 1 is `npm`, which forwards SIGTERM to node, so `--init` isn't needed (tested).
+
+### One-time setup (Ryan)
+1. Shared config, via symlinks to prefect-remote's:
+   ```sh
+   mkdir -m 700 ~/.config/unraid-deploy-seerr && cd ~/.config/unraid-deploy-seerr
+   for f in wg0.conf host known_hosts lan_endpoint; do ln -s ../unraid-deploy/$f .; done
+   ```
+2. New key: `ssh-keygen -t ed25519 -N '' -C unraid-deploy-seerr -f ~/.config/unraid-deploy-seerr/id_ed25519`
+3. Copy `scripts/unraid-deploy.sh` to Unraid as `/boot/config/scripts/unraid-deploy-seerr.sh`. Edit `CONTAINER` at the top if the container isn't named `Seerr`.
+4. webGUI → Users → root → SSH authorized keys, add:
+   `command="bash /boot/config/scripts/unraid-deploy-seerr.sh",restrict <contents of id_ed25519.pub>`
+5. On Unraid: `mkdir -p /mnt/user/appdata/seerr && chown -R 1000:1000 /mnt/user/appdata/seerr`. To bring the Overseerr data across, copy the backed-up config there first, then chown.
+6. webGUI → Docker → Add Container:
+   - Name `Seerr`
+   - Repository `ryanbautista97/seerr-ios:v1.0.0` (a pinned tag, never `latest`)
+   - Port 5055 → 5055
+   - Path `/app/config` → `/mnt/user/appdata/seerr`
+   - Variables `APNS_KEY` (p8 body) and `APNS_ENV=prod`
+   - Extra Parameters `--restart unless-stopped`
 
 ## Orchestrator context sync
 - After a direct task that changes API endpoints, entities/migrations, auth, conventions, or deployment, `t3_thread_send` the orchestrator (thread 22b9b0da-e70b-4886-8441-ab5aa773f00e) a replacement for the affected sections of `context/server-context.md`.
