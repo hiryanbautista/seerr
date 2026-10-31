@@ -65,6 +65,10 @@ Node `^22.19` (engine-strict). nvm has 22.23.4; run `nvm use 22.23.4` first. pnp
    - Variables `APNS_KEY` (p8 body) and `APNS_ENV=prod`
    - Extra Parameters `--restart unless-stopped`
 
+## Response length
+- In-thread replies to Ryan: outcome first, at most ~8 short lines, no recaps.
+- Reports to the orchestrator: facts only (PR URL, what changed, check results, blockers, decisions needed), as tight bullets. No narrative, and don't restate the brief.
+
 ## Orchestrator context sync
 - After a direct task that changes API endpoints, entities/migrations, auth, conventions, or deployment, `t3_thread_send` the orchestrator (thread 22b9b0da-e70b-4886-8441-ab5aa773f00e) a replacement for the affected sections of `context/server-context.md`.
 - When the orchestrator asks for changes since your last context update, reply with them or "none".
