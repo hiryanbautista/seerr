@@ -24,12 +24,15 @@ const getProvider = (): apn.Provider | undefined => {
   if (!key) {
     return undefined;
   }
+  // Accept the p8 body with or without its BEGIN/END lines.
+  const body = key
+    .replace(/\\n/g, '\n')
+    .replace(/-----(BEGIN|END)[^-]*-----/g, '')
+    .trim();
+  // Throws on an invalid key; send() catches it.
   provider ??= new apn.Provider({
     token: {
-      key: `-----BEGIN PRIVATE KEY-----\n${key}\n-----END PRIVATE KEY-----`.replace(
-        /\\n/g,
-        '\n'
-      ),
+      key: `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`,
       keyId: APNS_KEY_ID,
       teamId: APNS_TEAM_ID,
     },
@@ -89,86 +92,88 @@ class iOSAgent
     type: Notification,
     payload: NotificationPayload
   ): Promise<boolean> {
-    const apnProvider = getProvider();
-    if (!apnProvider) {
-      logger.warn('APNS_KEY is not set; skipping iOS notification', {
-        label: 'Notifications',
-      });
-      return false;
-    }
-
-    const userIds = new Set<number>();
-
-    if (
-      payload.notifyUser &&
-      (payload.notifyUser.settings?.hasNotificationType(
-        NotificationAgentKey.IOS,
-        type
-      ) ??
-        true)
-    ) {
-      userIds.add(payload.notifyUser.id);
-    }
-
-    if (payload.notifyAdmin) {
-      const users = await getRepository(User).find();
-      users
-        .filter(
-          (user) =>
-            (user.settings?.hasNotificationType(
-              NotificationAgentKey.IOS,
-              type
-            ) ??
-              true) &&
-            shouldSendAdminNotification(type, user, payload)
-        )
-        .forEach((user) => userIds.add(user.id));
-    }
-
-    const deviceRepository = getRepository(UserIOSDevice);
-    const devices =
-      userIds.size > 0
-        ? await deviceRepository.find({
-            where: { user: { id: In([...userIds]) } },
-          })
-        : [];
-
-    if (devices.length === 0) {
-      // A test with no registered device should report failure.
-      return type !== Notification.TEST_NOTIFICATION;
-    }
-
-    logger.debug('Sending iOS push notification', {
-      label: 'Notifications',
-      type: Notification[type],
-      subject: payload.subject,
-      devices: devices.length,
-    });
-
-    const note = new apn.Notification();
-    note.alert = this.getAlert(type, payload);
-    note.payload = {
-      type: Notification[type],
-      mediaId: payload.media?.tmdbId,
-      mediaType: payload.media?.mediaType,
-    };
-    note.badge = 0;
-    note.topic = APNS_TOPIC;
-
     try {
+      const apnProvider = getProvider();
+      if (!apnProvider) {
+        logger.warn('APNS_KEY is not set; skipping iOS notification', {
+          label: 'Notifications',
+        });
+        return false;
+      }
+
+      const userIds = new Set<number>();
+
+      if (
+        payload.notifyUser &&
+        (payload.notifyUser.settings?.hasNotificationType(
+          NotificationAgentKey.IOS,
+          type
+        ) ??
+          true)
+      ) {
+        userIds.add(payload.notifyUser.id);
+      }
+
+      if (payload.notifyAdmin) {
+        const users = await getRepository(User).find();
+        users
+          .filter(
+            (user) =>
+              (user.settings?.hasNotificationType(
+                NotificationAgentKey.IOS,
+                type
+              ) ??
+                true) &&
+              shouldSendAdminNotification(type, user, payload)
+          )
+          .forEach((user) => userIds.add(user.id));
+      }
+
+      const deviceRepository = getRepository(UserIOSDevice);
+      const devices =
+        userIds.size > 0
+          ? await deviceRepository.find({
+              where: { user: { id: In([...userIds]) } },
+            })
+          : [];
+
+      if (devices.length === 0) {
+        // A test with no registered device should report failure.
+        return type !== Notification.TEST_NOTIFICATION;
+      }
+
+      logger.debug('Sending iOS push notification', {
+        label: 'Notifications',
+        type: Notification[type],
+        subject: payload.subject,
+        devices: devices.length,
+      });
+
+      const note = new apn.Notification();
+      note.alert = this.getAlert(type, payload);
+      note.payload = {
+        type: Notification[type],
+        mediaId: payload.media?.tmdbId,
+        mediaType: payload.media?.mediaType,
+      };
+      note.badge = 0;
+      note.topic = APNS_TOPIC;
+
       const result = await apnProvider.send(
         note,
         devices.map((d) => d.token)
       );
 
       for (const failure of result.failed) {
+        const reason = failure.response?.reason ?? failure.error?.message;
         logger.error('Error sending iOS notification', {
           label: 'Notifications',
           status: failure.status,
-          reason: failure.response?.reason ?? failure.error?.message,
+          reason,
         });
-        // 410 = token no longer valid for this app; drop it.
-        if (failure.status === 410) {
+        // Token is dead (410) or not valid for this APNs environment
+        // (BadDeviceToken, e.g. a sandbox token sent to production); drop it.
+        if (failure.status === 410 || reason === 'BadDeviceToken') {
           await deviceRepository.delete({ token: failure.device });
         }
       }

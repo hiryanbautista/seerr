@@ -27,6 +27,16 @@ import net from 'net';
 import { Not } from 'typeorm';
 import { canMakePermissionsChange } from '.';
 
+// Fork-only: APNs tokens are hex. Returns the lowercased token, undefined if
+// absent/null, or false if malformed.
+const parseIOSDeviceToken = (value: unknown): string | undefined | false => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const token = typeof value === 'string' ? value.toLowerCase() : '';
+  return /^[0-9a-f]{64,200}$/.test(token) ? token : false;
+};
+
 const userSettingsRoutes = Router({ mergeParams: true });
 
 userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
@@ -617,12 +627,13 @@ userSettingsRoutes.get<{ id: string }, UserSettingsNotificationsResponse>(
             ? settings.discord.types
             : 0,
         discordIds: user.settings?.discordIds ?? [],
-        iOSDeviceToken: (
-          await getRepository(UserIOSDevice).findOne({
-            where: { user: { id: user.id } },
-            order: { id: 'DESC' },
-          })
-        )?.token,
+        iOSDeviceToken:
+          (
+            await getRepository(UserIOSDevice).findOne({
+              where: { user: { id: user.id } },
+              order: { id: 'DESC' },
+            })
+          )?.token ?? null,
         pushbulletAccessToken: user.settings?.pushbulletAccessToken,
         pushoverApplicationToken: user.settings?.pushoverApplicationToken,
         pushoverUserKey: user.settings?.pushoverUserKey,
@@ -664,6 +675,13 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
         });
       }
 
+      // Fork-only: APNs device token. A string registers it; absent or null
+      // leaves tokens alone.
+      const iOSDeviceToken = parseIOSDeviceToken(req.body.iOSDeviceToken);
+      if (iOSDeviceToken === false) {
+        return next({ status: 400, message: 'Invalid iOSDeviceToken.' });
+      }
+
       const discordIds =
         req.body.discordIds?.filter((id: string) => id !== '') ?? [];
 
@@ -701,26 +719,27 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
 
       await userRepository.save(user);
 
-      // Fork-only: register the iOS app's APNs token. A token belongs to one
-      // device, so re-registering moves it to whoever is signed in now.
-      const iOSDeviceToken = req.body.iOSDeviceToken;
-      if (typeof iOSDeviceToken === 'string' && iOSDeviceToken !== '') {
+      // Fork-only: a token belongs to one device, so registering it moves it
+      // to user :id.
+      if (iOSDeviceToken) {
         const deviceRepository = getRepository(UserIOSDevice);
-        const device =
-          (await deviceRepository.findOne({
-            where: { token: iOSDeviceToken },
-          })) ?? new UserIOSDevice({ token: iOSDeviceToken });
-        device.user = user;
-        await deviceRepository.save(device);
+        const register = async () => {
+          const device =
+            (await deviceRepository.findOne({
+              where: { token: iOSDeviceToken },
+            })) ?? new UserIOSDevice({ token: iOSDeviceToken });
+          device.user = user;
+          await deviceRepository.save(device);
+        };
+        // A concurrent first registration can hit the UNIQUE constraint;
+        // the retry finds that row and updates it.
+        await register().catch(register);
       }
 
       return res.status(200).json({
         pgpKey: user.settings.pgpKey,
         discordIds: user.settings.discordIds ?? [],
-        iOSDeviceToken:
-          typeof iOSDeviceToken === 'string' && iOSDeviceToken !== ''
-            ? iOSDeviceToken
-            : undefined,
+        iOSDeviceToken,
         pushbulletAccessToken: user.settings.pushbulletAccessToken,
         pushoverApplicationToken: user.settings.pushoverApplicationToken,
         pushoverUserKey: user.settings.pushoverUserKey,
@@ -730,6 +749,38 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
         telegramSendSilently: user.settings.telegramSendSilently,
         notificationTypes: user.settings.notificationTypes,
       });
+    } catch (e) {
+      next({ status: 500, message: e.message });
+    }
+  }
+);
+
+// Fork-only: iOS sign-out. Removes one device token from user :id; 204 even if
+// it wasn't registered to them, so it doesn't reveal whether a token exists.
+userSettingsRoutes.delete<{ id: string }>(
+  '/notifications/ios-device',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    const token = parseIOSDeviceToken(req.body?.token);
+    if (!token) {
+      return next({ status: 400, message: 'Invalid token.' });
+    }
+
+    const userId = Number(req.params.id);
+    // "Owner" user settings cannot be modified by other users
+    if (userId === 1 && req.user?.id !== 1) {
+      return next({
+        status: 403,
+        message: "You do not have permission to modify this user's settings.",
+      });
+    }
+
+    try {
+      await getRepository(UserIOSDevice).delete({
+        token,
+        user: { id: userId },
+      });
+      return res.status(204).send();
     } catch (e) {
       next({ status: 500, message: e.message });
     }

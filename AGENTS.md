@@ -14,7 +14,7 @@ It replaces the old Overseerr fork at `../overseerr` and backs the iOS app at `.
 - iOS push over APNs: `server/lib/notifications/agents/ios.ts`, registered in `server/index.ts`.
 - Token table: `server/entity/UserIOSDevice.ts` (added to the entity list in `server/datasource.ts`), plus migration `server/migration/sqlite/1793329975544-AddUserIOSDevice.ts`. Tokens live in their own table on purpose: SQLite migrations rebuild `user_settings` and would drop any column we add there.
 - `ios` notification key in `server/lib/settings/index.ts` and `server/entity/UserSettings.ts`.
-- Routes: `/settings/notifications/ios[/test]` in `server/routes/settings/notifications.ts`. `iOSDeviceToken` is accepted and returned by `/user/{id}/settings/notifications` (`server/routes/user/usersettings.ts`).
+- Routes: `/settings/notifications/ios[/test]` in `server/routes/settings/notifications.ts`. `iOSDeviceToken` (hex, 64–200 chars, stored lowercase) is accepted and returned by `/user/{id}/settings/notifications`; `DELETE /user/{id}/settings/notifications/ios-device` `{token}` removes one device (`server/routes/user/usersettings.ts`).
 - Spec: `seerr-api.yml` (`iOSSettings`, the paths above, `iOSDeviceToken`, `NotificationAgentTypes.ios`). The OpenAPI validator rejects anything that isn't in the spec.
 - `.github/workflows/docker-image.yml`.
 

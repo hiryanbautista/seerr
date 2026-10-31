@@ -5485,6 +5485,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserSettingsNotifications'
+  /user/{userId}/settings/notifications/ios-device:
+    delete:
+      summary: Remove an iOS device token from a user
+      description: Removes the APNs token from the user if it is registered to them (iOS sign-out). Returns 204 whether or not it was registered.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+              required:
+                - token
+      responses:
+        '204':
+          description: Token removed (or was not registered to this user)
+        '400':
+          description: Malformed token
   /user/{userId}/settings/permissions:
     get:
       summary: Get permission settings for a user
