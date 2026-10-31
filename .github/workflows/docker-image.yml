@@ -42,7 +42,7 @@ jobs:
             ryanbautista97/seerr-ios:v${{ vars.SEERR_MAJOR }}.0.${{ vars.SEERR_MINOR }}
 
       - name: Bump minor version
-        uses: action-pack/increment@1458c307cedd62641619be2480c6263cf39864ac # v2
+        uses: action-pack/increment@1458c307cedd62641619be2480c6263cf39864ac # v2.18
         with:
           name: SEERR_MINOR
           token: ${{ secrets.REPO_ACCESS_TOKEN }}

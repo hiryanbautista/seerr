@@ -171,10 +171,16 @@ class iOSAgent
           status: failure.status,
           reason,
         });
-        // Token is dead (410) or not valid for this APNs environment
-        // (BadDeviceToken, e.g. a sandbox token sent to production); drop it.
-        if (failure.status === 410 || reason === 'BadDeviceToken') {
+        // 410 = token no longer valid for this app; drop it.
+        if (failure.status === 410) {
           await deviceRepository.delete({ token: failure.device });
+        } else if (reason === 'BadDeviceToken') {
+          // Keep the token: a wrong APNS_ENV makes every token fail this way,
+          // and the app doesn't re-register, so deleting would lose them all.
+          logger.warn(
+            'APNs rejected the device token; APNS_ENV may not match the app build (sandbox vs production)',
+            { label: 'Notifications' }
+          );
         }
       }
 
