@@ -85,7 +85,6 @@ settingsRoutes.post('/main', async (req, res) => {
 
   settings.main = merge(settings.main, req.body);
   await settings.save();
-  // Fork-only: the announcement carries the title and URL.
   void syncLocalDiscovery();
 
   return res.status(200).json(settings.main);

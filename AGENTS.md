@@ -10,7 +10,7 @@ It replaces the old Overseerr fork at `../overseerr` and backs the iOS app at `.
 - Never edit a shipped migration. Add a new one.
 - Don't touch `config/` (gitignored local settings and DB).
 
-## Fork-only code (keep the diff small; mark new files with a `Fork-only` comment)
+## Our additions (keep the diff small)
 - iOS push over APNs: `server/lib/notifications/agents/ios.ts`, registered in `server/index.ts`.
 - Token table: `server/entity/UserIOSDevice.ts` (added to the entity list in `server/datasource.ts`), plus migration `server/migration/sqlite/1793329975544-AddUserIOSDevice.ts`. Tokens live in their own table on purpose: SQLite migrations rebuild `user_settings` and would drop any column we add there.
 - `ios` notification key in `server/lib/settings/index.ts` and `server/entity/UserSettings.ts`.

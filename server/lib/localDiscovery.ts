@@ -1,4 +1,4 @@
-// Fork-only: announce this server on the LAN over DNS-SD (_seerr._tcp) so the
+// Announce this server on the LAN over DNS-SD (_seerr._tcp) so the
 // iOS app can list it on its sign-in screen. Needs host networking in Docker.
 import type { CiaoService, Responder } from '@homebridge/ciao';
 import { getResponder } from '@homebridge/ciao';

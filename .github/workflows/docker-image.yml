@@ -1,4 +1,4 @@
-# Fork-only: build and push Ryan's image on every push to develop.
+# Build and push Ryan's image on every push to develop.
 name: Docker Image CI
 
 on:

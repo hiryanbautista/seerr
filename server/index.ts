@@ -305,7 +305,6 @@ app
         });
       });
     }
-    // Fork-only: mDNS announcement for the iOS app. Never throws.
     void startLocalDiscovery(port);
     httpServer.on('error', (err) => {
       logger.error('Failed to start server', {

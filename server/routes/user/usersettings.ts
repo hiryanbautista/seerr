@@ -27,7 +27,7 @@ import net from 'net';
 import { Not } from 'typeorm';
 import { canMakePermissionsChange } from '.';
 
-// Fork-only: APNs tokens are hex. Returns the lowercased token, undefined if
+// APNs tokens are hex. Returns the lowercased token, undefined if
 // absent/null, or false if malformed.
 const parseIOSDeviceToken = (value: unknown): string | undefined | false => {
   if (value === undefined || value === null) {
@@ -675,7 +675,7 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
         });
       }
 
-      // Fork-only: APNs device token. A string registers it; absent or null
+      // APNs device token. A string registers it; absent or null
       // leaves tokens alone.
       const iOSDeviceToken = parseIOSDeviceToken(req.body.iOSDeviceToken);
       if (iOSDeviceToken === false) {
@@ -719,7 +719,7 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
 
       await userRepository.save(user);
 
-      // Fork-only: a token belongs to one device, so registering it moves it
+      // A token belongs to one device, so registering it moves it
       // to user :id.
       if (iOSDeviceToken) {
         const deviceRepository = getRepository(UserIOSDevice);
@@ -755,7 +755,7 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
   }
 );
 
-// Fork-only: iOS sign-out. Removes one device token from user :id; 204 even if
+// iOS sign-out. Removes one device token from user :id; 204 even if
 // it wasn't registered to them, so it doesn't reveal whether a token exists.
 userSettingsRoutes.delete<{ id: string }>(
   '/notifications/ios-device',

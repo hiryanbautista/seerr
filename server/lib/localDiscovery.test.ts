@@ -1,4 +1,3 @@
-// Fork-only: local discovery (mDNS) announcement.
 import assert from 'node:assert/strict';
 import { before, describe, it, mock } from 'node:test';
 
