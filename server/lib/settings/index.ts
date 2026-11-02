@@ -184,6 +184,8 @@ export interface NetworkSettings {
   proxy: ProxySettings;
   dnsCache: DnsCacheSettings;
   apiRequestTimeout: number;
+  // Fork-only: announce the server over mDNS for the iOS app.
+  localDiscovery: boolean;
 }
 
 interface PublicSettings {
@@ -642,6 +644,7 @@ class Settings {
           forceMaxTtl: -1,
         },
         apiRequestTimeout: 10000,
+        localDiscovery: true,
       },
       migrations: [],
     };

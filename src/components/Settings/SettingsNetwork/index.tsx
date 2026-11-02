@@ -28,6 +28,9 @@ const messages = defineMessages('components.Settings.SettingsNetwork', {
   trustProxy: 'Enable Proxy Support',
   trustProxyTip:
     'Allow Seerr to correctly register client IP addresses behind a proxy',
+  localDiscovery: 'Local Network Discovery',
+  localDiscoveryTip:
+    'Announce Seerr on your local network (mDNS) so apps can find it. In Docker this needs host networking (network_mode: host).',
   proxyEnabled: 'HTTP(S) Proxy',
   proxyEnabledTip:
     'Send ALL outgoing HTTP/HTTPS requests through a proxy server (host/port). Does NOT enable HTTPS, SSL, or certificate configuration.',
@@ -136,6 +139,7 @@ const SettingsNetwork = () => {
             dnsCacheForceMinTtl: data?.dnsCache.forceMinTtl,
             dnsCacheForceMaxTtl: data?.dnsCache.forceMaxTtl,
             trustProxy: data?.trustProxy,
+            localDiscovery: data?.localDiscovery ?? true,
             proxyEnabled: data?.proxy?.enabled,
             proxyHostname: data?.proxy?.hostname,
             proxyPort: data?.proxy?.port,
@@ -157,6 +161,7 @@ const SettingsNetwork = () => {
                 csrfProtection: values.csrfProtection,
                 forceIpv4First: values.forceIpv4First,
                 trustProxy: values.trustProxy,
+                localDiscovery: values.localDiscovery,
                 dnsCache: {
                   enabled: values.dnsCacheEnabled,
                   forceMinTtl: Number(values.dnsCacheForceMinTtl),
@@ -218,6 +223,26 @@ const SettingsNetwork = () => {
                       name="trustProxy"
                       onChange={() => {
                         setFieldValue('trustProxy', !values.trustProxy);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label htmlFor="localDiscovery" className="checkbox-label">
+                    <span className="mr-2">
+                      {intl.formatMessage(messages.localDiscovery)}
+                    </span>
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.localDiscoveryTip)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <Field
+                      type="checkbox"
+                      id="localDiscovery"
+                      name="localDiscovery"
+                      onChange={() => {
+                        setFieldValue('localDiscovery', !values.localDiscovery);
                       }}
                     />
                   </div>

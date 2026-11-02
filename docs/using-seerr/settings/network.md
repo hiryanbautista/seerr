@@ -37,6 +37,14 @@ If you have Seerr behind a reverse proxy, enable this setting to allow Seerr to 
 
 This setting is **disabled** by default.
 
+## Local Network Discovery
+
+Seerr announces itself on your local network over mDNS (DNS-SD service `_seerr._tcp`) so apps on the same network can find it without typing an address. The announcement uses your **Application Title** as its name and listens on the same port as Seerr (`PORT`, default `5055`).
+
+This setting is **enabled** by default. Turning it off withdraws the announcement immediately; no restart is needed.
+
+Docker's default bridge network doesn't pass mDNS traffic, so in Docker the container needs host networking (`network_mode: host` in Compose, or `--network host`). With host networking, port mappings no longer apply: Seerr is reachable on the port it listens on. Set the `PORT` environment variable to keep a different port. If mDNS can't start (for example, no multicast is available), Seerr logs a warning and keeps running.
+
 ## Enable CSRF Protection
 
 :::warning

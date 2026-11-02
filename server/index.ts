@@ -6,6 +6,7 @@ import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { initI18n } from '@server/i18n';
 import { startJobs } from '@server/job/schedule';
+import { startLocalDiscovery } from '@server/lib/localDiscovery';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
@@ -304,6 +305,8 @@ app
         });
       });
     }
+    // Fork-only: mDNS announcement for the iOS app. Never throws.
+    void startLocalDiscovery(port);
     httpServer.on('error', (err) => {
       logger.error('Failed to start server', {
         label: 'Server',

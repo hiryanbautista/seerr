@@ -18,6 +18,7 @@ import { scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
+import { syncLocalDiscovery } from '@server/lib/localDiscovery';
 import { Permission } from '@server/lib/permissions';
 import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
@@ -84,6 +85,8 @@ settingsRoutes.post('/main', async (req, res) => {
 
   settings.main = merge(settings.main, req.body);
   await settings.save();
+  // Fork-only: the announcement carries the title and URL.
+  void syncLocalDiscovery();
 
   return res.status(200).json(settings.main);
 });
@@ -99,6 +102,7 @@ settingsRoutes.post('/network', async (req, res) => {
 
   settings.network = merge(settings.network, req.body);
   await settings.save();
+  void syncLocalDiscovery();
 
   return res.status(200).json(settings.network);
 });

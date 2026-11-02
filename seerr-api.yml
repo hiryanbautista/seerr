@@ -325,6 +325,10 @@ components:
             forceMaxTtl:
               type: number
               example: -1
+        localDiscovery:
+          type: boolean
+          example: true
+          description: Announce this server on the local network over mDNS (`_seerr._tcp`) so apps can find it. Requires host networking in Docker.
     PlexLibrary:
       type: object
       properties:
