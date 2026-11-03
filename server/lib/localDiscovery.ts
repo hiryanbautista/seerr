@@ -10,6 +10,7 @@ import { getResponder } from '@homebridge/ciao';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { getAppVersion } from '@server/utils/appVersion';
+import { networkInterfaces } from 'node:os';
 
 export const SERVICE_TYPE = 'seerr';
 
@@ -35,14 +36,34 @@ export const buildTxt = ({
 const isLoopback = (host: string) =>
   host === 'localhost' || host === '::1' || host.startsWith('127.');
 
-// Comma-separated interface names or IPs to announce on; default is ciao's
-// choice (the default route's subnet, plus loopback).
-const responderOptions = () => {
-  const names = (process.env.MDNS_INTERFACE ?? '')
+// Comma-separated interface names or IPs to announce on; default is every
+// interface with an address.
+const pinnedInterfaces = () =>
+  (process.env.MDNS_INTERFACE ?? '')
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean);
+
+const responderOptions = () => {
+  const names = pinnedInterfaces();
   return names.length > 0 ? { interface: names } : undefined;
+};
+
+// A typo would otherwise leave only loopback while still logging "Announcing".
+const warnUnknownInterfaces = () => {
+  const interfaces = networkInterfaces();
+  const addresses = Object.values(interfaces).flatMap(
+    (infos) => infos?.map((info) => info.address) ?? []
+  );
+  const unknown = pinnedInterfaces().filter(
+    (entry) => !(entry in interfaces) && !addresses.includes(entry)
+  );
+  if (unknown.length > 0) {
+    logger.warn(
+      `MDNS_INTERFACE lists unknown interface(s): ${unknown.join(', ')}. Available: ${Object.keys(interfaces).join(', ')}`,
+      { label: 'Local Discovery' }
+    );
+  }
 };
 
 let port: number | undefined;
@@ -132,6 +153,7 @@ export const startLocalDiscovery = (
     return Promise.resolve();
   }
   port = listenPort;
+  warnUnknownInterfaces();
 
   if (!signalsHooked) {
     signalsHooked = true;

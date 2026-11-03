@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { networkInterfaces } from 'node:os';
 import { afterEach, before, describe, it, mock } from 'node:test';
 
 import { getSettings } from '@server/lib/settings';
+import logger from '@server/logger';
 import type * as LocalDiscovery from './localDiscovery';
 
 type FakeService = {
@@ -155,6 +157,21 @@ describe('local discovery', () => {
     assert.deepStrictEqual(responders[0].options, {
       interface: ['br0', 'eth0'],
     });
+  });
+
+  it('warns about an unknown MDNS_INTERFACE', async () => {
+    setup();
+    const warn = mock.method(logger, 'warn');
+    try {
+      const [real] = Object.keys(networkInterfaces());
+      process.env.MDNS_INTERFACE = `${real}, nope0`;
+      await discovery.startLocalDiscovery(5055);
+      const messages = warn.mock.calls.map((c) => String(c.arguments[0]));
+      const unknown = messages.find((m) => m.includes('unknown interface'));
+      assert.ok(unknown?.includes(': nope0.'), unknown);
+    } finally {
+      warn.mock.restore();
+    }
   });
 
   it('skips a loopback HOST', async () => {
