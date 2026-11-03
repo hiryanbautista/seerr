@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { before, describe, it, mock } from 'node:test';
+import { afterEach, before, describe, it, mock } from 'node:test';
 
 import { getSettings } from '@server/lib/settings';
 import type * as LocalDiscovery from './localDiscovery';
@@ -8,42 +8,51 @@ type FakeService = {
   options: { name: string; type: string; port: number };
   txt: Record<string, string>;
   advertised: boolean;
-  destroyed: boolean;
 };
 
-const services: FakeService[] = [];
+type FakeResponder = {
+  options?: { interface: string[] };
+  services: FakeService[];
+  shutDown: boolean;
+};
+
+// Each getResponder() call is a fresh responder, as in ciao once the previous
+// one has been shut down.
+const responders: FakeResponder[] = [];
 let failAdvertise = false;
-let shutdowns = 0;
 
 mock.module('@homebridge/ciao', {
   namedExports: {
-    getResponder: () => ({
-      createService: (options: FakeService['options'] & { txt: never }) => {
-        const service: FakeService & Record<string, unknown> = {
-          options,
-          txt: options.txt,
-          advertised: false,
-          destroyed: false,
-          advertise: async () => {
-            if (failAdvertise) {
-              throw new Error('bind EADDRINUSE 0.0.0.0:5353');
-            }
-            service.advertised = true;
-          },
-          destroy: async () => {
-            service.destroyed = true;
-          },
-          updateTxt: (txt: Record<string, string>) => {
-            service.txt = txt;
-          },
-        };
-        services.push(service);
-        return service;
-      },
-      shutdown: async () => {
-        shutdowns++;
-      },
-    }),
+    getResponder: (options?: FakeResponder['options']) => {
+      const responder: FakeResponder & Record<string, unknown> = {
+        options,
+        services: [],
+        shutDown: false,
+        createService: (opts: FakeService['options'] & { txt: never }) => {
+          const service: FakeService & Record<string, unknown> = {
+            options: opts,
+            txt: opts.txt,
+            advertised: false,
+            advertise: async () => {
+              if (failAdvertise) {
+                throw new Error('bind EADDRINUSE 0.0.0.0:5353');
+              }
+              service.advertised = true;
+            },
+            updateTxt: (txt: Record<string, string>) => {
+              service.txt = txt;
+            },
+          };
+          responder.services.push(service);
+          return service;
+        },
+        shutdown: async () => {
+          responder.shutDown = true;
+        },
+      };
+      responders.push(responder);
+      return responder;
+    },
   },
 });
 
@@ -53,7 +62,24 @@ before(async () => {
   discovery = await import('./localDiscovery');
 });
 
-const live = () => services.filter((s) => s.advertised && !s.destroyed);
+afterEach(async () => {
+  await discovery.stopLocalDiscovery();
+  responders.length = 0;
+  failAdvertise = false;
+  delete process.env.MDNS_INTERFACE;
+});
+
+const open = () => responders.filter((r) => !r.shutDown);
+const announced = () =>
+  open().flatMap((r) => r.services.filter((s) => s.advertised));
+
+const setup = (overrides: { title?: string; url?: string } = {}) => {
+  const settings = getSettings();
+  settings.network.localDiscovery = true;
+  settings.main.applicationTitle = overrides.title ?? 'Home Seerr';
+  settings.main.applicationUrl = overrides.url ?? '';
+  return settings;
+};
 
 describe('buildTxt', () => {
   it('builds the TXT record and leaves url out when empty', () => {
@@ -74,15 +100,12 @@ describe('buildTxt', () => {
 });
 
 describe('local discovery', () => {
-  it('starts, follows settings and stops', async () => {
-    const settings = getSettings();
-    settings.network.localDiscovery = true;
-    settings.main.applicationTitle = 'Home Seerr';
-    settings.main.applicationUrl = '';
+  it('announces and follows settings', async () => {
+    const settings = setup();
 
     await discovery.startLocalDiscovery(5056);
-    assert.strictEqual(live().length, 1);
-    const [first] = live();
+    assert.strictEqual(announced().length, 1);
+    const [first] = announced();
     assert.deepStrictEqual(first.options, {
       name: 'Home Seerr',
       type: 'seerr',
@@ -95,37 +118,68 @@ describe('local discovery', () => {
     // A URL change updates the TXT record in place.
     settings.main.applicationUrl = 'https://seerr.example';
     await discovery.syncLocalDiscovery();
-    assert.deepStrictEqual(live(), [first]);
+    assert.deepStrictEqual(announced(), [first]);
     assert.strictEqual(first.txt.url, 'https://seerr.example');
 
     // A rename re-announces under the new name.
     settings.main.applicationTitle = 'Seerr';
     await discovery.syncLocalDiscovery();
-    assert.strictEqual(first.destroyed, true);
-    assert.strictEqual(live()[0].options.name, 'Seerr');
+    assert.strictEqual(announced().length, 1);
+    assert.strictEqual(announced()[0].options.name, 'Seerr');
+    assert.strictEqual(responders[0].shutDown, true);
 
-    // Toggle off withdraws, toggle on announces again.
+    // Stopping sends goodbyes through the responder.
+    await discovery.stopLocalDiscovery();
+    assert.strictEqual(open().length, 0);
+  });
+
+  it('shuts the responder down when toggled off, and back on', async () => {
+    const settings = setup();
+    await discovery.startLocalDiscovery(5055);
+
     settings.network.localDiscovery = false;
     await discovery.syncLocalDiscovery();
-    assert.strictEqual(live().length, 0);
+    assert.strictEqual(open().length, 0);
+    assert.strictEqual(responders[0].shutDown, true);
+
     settings.network.localDiscovery = true;
     await discovery.syncLocalDiscovery();
-    assert.strictEqual(live().length, 1);
+    assert.strictEqual(open().length, 1);
+    assert.strictEqual(announced().length, 1);
+  });
 
-    // Shutdown sends goodbyes through the responder.
-    await discovery.stopLocalDiscovery();
-    assert.strictEqual(shutdowns, 1);
+  it('restricts to MDNS_INTERFACE', async () => {
+    setup();
+    process.env.MDNS_INTERFACE = 'br0, eth0';
+    await discovery.startLocalDiscovery(5055);
+    assert.deepStrictEqual(responders[0].options, {
+      interface: ['br0', 'eth0'],
+    });
+  });
+
+  it('skips a loopback HOST', async () => {
+    setup();
+    for (const host of ['127.0.0.1', 'localhost', '::1']) {
+      await discovery.startLocalDiscovery(5055, host);
+    }
+    assert.strictEqual(responders.length, 0);
+    await discovery.startLocalDiscovery(5055, '0.0.0.0');
+    assert.strictEqual(announced().length, 1);
+  });
+
+  it('registers signal handlers once', async () => {
+    setup();
+    await discovery.startLocalDiscovery(5055);
+    const count = process.listenerCount('SIGTERM');
+    await discovery.startLocalDiscovery(5055);
+    assert.strictEqual(process.listenerCount('SIGTERM'), count);
   });
 
   it('logs and keeps running when mDNS fails', async () => {
-    getSettings().network.localDiscovery = true;
+    setup();
     failAdvertise = true;
-    const created = services.length;
     await assert.doesNotReject(discovery.startLocalDiscovery(5055));
-    const attempted = services.slice(created);
-    assert.strictEqual(attempted.length, 1);
-    assert.strictEqual(attempted[0].destroyed, true);
-    failAdvertise = false;
-    await discovery.stopLocalDiscovery();
+    assert.strictEqual(responders.length, 1);
+    assert.strictEqual(responders[0].shutDown, true);
   });
 });

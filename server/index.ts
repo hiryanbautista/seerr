@@ -305,7 +305,7 @@ app
         });
       });
     }
-    void startLocalDiscovery(port);
+    httpServer.on('listening', () => void startLocalDiscovery(port, host));
     httpServer.on('error', (err) => {
       logger.error('Failed to start server', {
         label: 'Server',
