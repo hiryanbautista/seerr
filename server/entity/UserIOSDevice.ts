@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 import { User } from './User';
 
-// Fork-only: APNs device tokens for the iOS app. Kept in its own table so
+// APNs device tokens for the iOS app. Kept in its own table so
 // upstream SQLite migrations that rebuild user_settings never drop it.
 @Entity()
 export class UserIOSDevice {

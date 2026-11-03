@@ -1,4 +1,3 @@
-// Fork-only: iOS device token registration through user notification settings.
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 

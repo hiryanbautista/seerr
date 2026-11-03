@@ -10,13 +10,14 @@ It replaces the old Overseerr fork at `../overseerr` and backs the iOS app at `.
 - Never edit a shipped migration. Add a new one.
 - Don't touch `config/` (gitignored local settings and DB).
 
-## Fork-only code (keep the diff small; mark new files with a `Fork-only` comment)
+## Our additions (keep the diff small)
 - iOS push over APNs: `server/lib/notifications/agents/ios.ts`, registered in `server/index.ts`.
 - Token table: `server/entity/UserIOSDevice.ts` (added to the entity list in `server/datasource.ts`), plus migration `server/migration/sqlite/1793329975544-AddUserIOSDevice.ts`. Tokens live in their own table on purpose: SQLite migrations rebuild `user_settings` and would drop any column we add there.
 - `ios` notification key in `server/lib/settings/index.ts` and `server/entity/UserSettings.ts`.
 - Routes: `/settings/notifications/ios[/test]` in `server/routes/settings/notifications.ts`. `iOSDeviceToken` (hex, 64–200 chars, stored lowercase) is accepted and returned by `/user/{id}/settings/notifications`; `DELETE /user/{id}/settings/notifications/ios-device` `{token}` removes one device (`server/routes/user/usersettings.ts`).
 - Spec: `seerr-api.yml` (`iOSSettings`, the paths above, `iOSDeviceToken`, `NotificationAgentTypes.ios`). The OpenAPI validator rejects anything that isn't in the spec.
 - `.github/workflows/docker-image.yml`.
+- Local discovery (mDNS `_seerr._tcp`, TXT `id`/`name`/`url`/`v`): `server/lib/localDiscovery.ts`, started in `server/index.ts`, re-synced on `/settings/main` and `/settings/network` saves. Setting `network.localDiscovery` (default true; spec, settings types, Settings → Network toggle). Needs host networking in Docker; `PORT` sets the listen port; `MDNS_INTERFACE` (comma-separated) pins interfaces. ciao can `process.exit(1)` if a re-announce fails after an interface change; pinning the interface limits it.
 
 ## Commands
 Node `^22.19` (engine-strict). nvm has 22.23.4; run `nvm use 22.23.4` first. pnpm 10 is installed through Homebrew.

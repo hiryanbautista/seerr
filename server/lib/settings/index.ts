@@ -184,6 +184,7 @@ export interface NetworkSettings {
   proxy: ProxySettings;
   dnsCache: DnsCacheSettings;
   apiRequestTimeout: number;
+  localDiscovery: boolean;
 }
 
 interface PublicSettings {
@@ -642,6 +643,7 @@ class Settings {
           forceMaxTtl: -1,
         },
         apiRequestTimeout: 10000,
+        localDiscovery: true,
       },
       migrations: [],
     };

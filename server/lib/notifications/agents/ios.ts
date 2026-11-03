@@ -1,4 +1,4 @@
-// Fork-only: native iOS push notifications over APNs.
+// Native iOS push notifications over APNs.
 import apn from '@parse/node-apn';
 import { IssueType, IssueTypeName } from '@server/constants/issue';
 import { MediaType } from '@server/constants/media';
