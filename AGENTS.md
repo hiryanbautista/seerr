@@ -41,6 +41,7 @@ Node `^22.19` (engine-strict). nvm has 22.23.4; run `nvm use 22.23.4` first. pnp
 - Image `ryanbautista97/seerr-ios`, port 5055, config in `/app/config` (`settings.json`, `db/db.sqlite3`).
 - **The container runs as `node` (uid 1000), not root.** The host config dir must be writable by uid 1000.
 - Env: `APNS_KEY` (p8 body, `\n` escaped) and `APNS_ENV=prod` for production APNs (any other value means sandbox). Key ID, Team ID and topic are constants in `ios.ts`.
+- APNs fallback: pushes go to the `APNS_ENV` environment first; a device answered with `BadDeviceToken` is retried once on the other environment (same key), so Xcode builds (sandbox tokens) and TestFlight/App Store builds (production tokens) both work. 410 removes the token in either.
 - Repo variables `SEERR_MAJOR`/`SEERR_MINOR` and secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `REPO_ACCESS_TOKEN` need to be set on hiryanbautista/seerr. Once Actions is enabled, disable every upstream workflow except Docker Image CI (`gh workflow disable -R hiryanbautista/seerr <name>`).
 
 ## Orchestrator context sync
