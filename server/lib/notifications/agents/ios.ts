@@ -106,10 +106,7 @@ export const recordIOSDelivery = (
   delivery.recent.length = Math.min(delivery.recent.length, RECENT_LIMIT);
 };
 
-export const getIOSDeliveryStatus = () => ({
-  ...delivery,
-  recent: [...delivery.recent],
-});
+export const getIOSDeliveryStatus = () => structuredClone(delivery);
 
 class iOSAgent
   extends BaseAgent<NotificationAgentConfig>
@@ -167,6 +164,11 @@ class iOSAgent
     const fallback: APNsEnv =
       primary === 'production' ? 'sandbox' : 'production';
     let devices: UserIOSDevice[] = [];
+    // Final outcome per token; a fallback retry overwrites the first try.
+    const outcomes = new Map<
+      string,
+      { ok: boolean; environment: APNsEnv; reason: string | null }
+    >();
     const record = (
       device: UserIOSDevice,
       outcome: { ok: boolean; environment: APNsEnv; reason: string | null }
@@ -247,11 +249,6 @@ class iOSAgent
       note.badge = 0;
       note.topic = APNS_TOPIC;
 
-      // Final outcome per token; a fallback retry overwrites the first try.
-      const outcomes = new Map<
-        string,
-        { ok: boolean; environment: APNsEnv; reason: string | null }
-      >();
       const sendTo = async (env: APNsEnv, tokens: string[]) => {
         const provider = getProvider(env) as apn.Provider;
         const result = await provider.send(note, tokens);
@@ -325,9 +322,16 @@ class iOSAgent
         label: 'Notifications',
         errorMessage: e.message,
       });
-      // Devices we were sending to when it failed.
+      // Keep outcomes APNs already reported; anything else failed locally.
       devices.forEach((device) =>
-        record(device, { ok: false, environment: primary, reason: 'Error' })
+        record(
+          device,
+          outcomes.get(device.token) ?? {
+            ok: false,
+            environment: primary,
+            reason: 'Error',
+          }
+        )
       );
       return false;
     }

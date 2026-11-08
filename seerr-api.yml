@@ -3918,6 +3918,7 @@ paths:
                   lastFailure:
                     type: object
                     nullable: true
+                    required: [at, reason, environment, userId, token]
                     properties:
                       at:
                         type: string
@@ -3937,6 +3938,8 @@ paths:
                     type: array
                     items:
                       type: object
+                      required:
+                        [at, ok, environment, userId, token, type, reason]
                       properties:
                         at:
                           type: string

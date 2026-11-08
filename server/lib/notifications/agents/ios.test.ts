@@ -272,6 +272,61 @@ describe('iOS delivery status', () => {
     });
   });
 
+  it('records a partial failure across two devices', async () => {
+    const before = ios.getIOSDeliveryStatus();
+    outcomes.production[SANDBOX] = 'InternalServerError';
+    assert.strictEqual(await sendTest(PROD, SANDBOX), false);
+    const status = ios.getIOSDeliveryStatus();
+    assert.strictEqual(status.sent, before.sent + 1);
+    assert.strictEqual(status.failed, before.failed + 1);
+    assert.strictEqual(status.lastFailure?.reason, 'InternalServerError');
+    assert.strictEqual(status.lastFailure?.token, '…bbbbbb');
+  });
+
+  it('records NoKey once per device', async () => {
+    const before = ios.getIOSDeliveryStatus();
+    delete process.env.APNS_KEY;
+    try {
+      assert.strictEqual(await sendTest(PROD, SANDBOX), false);
+    } finally {
+      process.env.APNS_KEY = 'test-key';
+    }
+    const status = ios.getIOSDeliveryStatus();
+    assert.strictEqual(status.failed, before.failed + 2);
+    assert.deepStrictEqual(
+      status.recent.slice(0, 2).map((r) => r.reason),
+      ['NoKey', 'NoKey']
+    );
+    assert.strictEqual(calls.length, 0);
+  });
+
+  it('keeps reported outcomes when sending throws midway', async () => {
+    const before = ios.getIOSDeliveryStatus();
+    outcomes.production[SANDBOX] = 410;
+    const remove = mock.method(
+      getRepository(UserIOSDevice),
+      'delete',
+      async () => {
+        throw new Error('database is locked');
+      }
+    );
+    try {
+      assert.strictEqual(await sendTest(PROD, SANDBOX), false);
+    } finally {
+      remove.mock.restore();
+    }
+    const status = ios.getIOSDeliveryStatus();
+    assert.strictEqual(status.sent, before.sent + 1);
+    assert.strictEqual(status.failed, before.failed + 1);
+    const byToken = Object.fromEntries(
+      status.recent.slice(0, 2).map((r) => [r.token, [r.ok, r.reason]])
+    );
+    assert.deepStrictEqual(byToken, {
+      '…aaaaaa': [true, null],
+      '…bbbbbb': [false, 'Unregistered'],
+    });
+  });
+
   it('is admin only', async () => {
     const app = express();
     app.use(express.json());
