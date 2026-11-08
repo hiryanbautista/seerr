@@ -44,6 +44,22 @@ const getProvider = (env: APNsEnv): apn.Provider | undefined => {
 
 const tokenTail = (token: string) => `…${token.slice(-6)}`;
 
+let warnedEnv = false;
+const primaryEnv = (): APNsEnv => {
+  const value = (process.env.APNS_ENV ?? '').trim().toLowerCase();
+  if (value === 'prod' || value === 'production') {
+    return 'production';
+  }
+  if (!['', 'sandbox', 'development'].includes(value) && !warnedEnv) {
+    warnedEnv = true;
+    logger.warn(
+      `Unrecognized APNS_ENV "${process.env.APNS_ENV}"; using sandbox`,
+      { label: 'Notifications' }
+    );
+  }
+  return 'sandbox';
+};
+
 class iOSAgent
   extends BaseAgent<NotificationAgentConfig>
   implements NotificationAgent
@@ -97,8 +113,7 @@ class iOSAgent
   ): Promise<boolean> {
     try {
       // Xcode builds have sandbox tokens, so BadDeviceToken retries on the other environment.
-      const primary: APNsEnv =
-        process.env.APNS_ENV === 'prod' ? 'production' : 'sandbox';
+      const primary = primaryEnv();
       const fallback: APNsEnv =
         primary === 'production' ? 'sandbox' : 'production';
       if (!getProvider(primary)) {
