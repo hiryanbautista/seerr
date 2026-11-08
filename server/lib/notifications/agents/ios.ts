@@ -19,8 +19,6 @@ const APNS_TOPIC = 'io.ryanbautista.Overseerr';
 
 type APNsEnv = 'production' | 'sandbox';
 
-// One provider per environment for the whole process; each holds an HTTP/2
-// connection to APNs. The same p8 key works for both.
 const providers: Partial<Record<APNsEnv, apn.Provider>> = {};
 const getProvider = (env: APNsEnv): apn.Provider | undefined => {
   const key = process.env.APNS_KEY;
@@ -44,7 +42,6 @@ const getProvider = (env: APNsEnv): apn.Provider | undefined => {
   return providers[env];
 };
 
-// Never log a whole device token.
 const tokenTail = (token: string) => `…${token.slice(-6)}`;
 
 class iOSAgent
@@ -99,9 +96,7 @@ class iOSAgent
     payload: NotificationPayload
   ): Promise<boolean> {
     try {
-      // Xcode builds get sandbox tokens and TestFlight/App Store builds get
-      // production ones, so a token rejected as BadDeviceToken by the
-      // configured environment is retried once on the other.
+      // Xcode builds have sandbox tokens, so BadDeviceToken retries on the other environment.
       const primary: APNsEnv =
         process.env.APNS_ENV === 'prod' ? 'production' : 'sandbox';
       const fallback: APNsEnv =
@@ -177,7 +172,6 @@ class iOSAgent
         const badTokens: string[] = [];
         for (const failure of result.failed) {
           const reason = failure.response?.reason ?? failure.error?.message;
-          // 410 = token no longer valid for this app; drop it.
           if (failure.status === 410) {
             await deviceRepository.delete({ token: failure.device });
           } else if (reason === 'BadDeviceToken') {
@@ -193,7 +187,6 @@ class iOSAgent
           });
         }
         if (result.sent.length > 0) {
-          // A fallback delivery is worth seeing in normal logs.
           logger.log(env === primary ? 'debug' : 'info', 'iOS push delivered', {
             label: 'Notifications',
             environment: env,
@@ -212,8 +205,6 @@ class iOSAgent
         const retry = await sendTo(fallback, first.badTokens);
         failed += retry.failed - first.badTokens.length;
         for (const token of retry.badTokens) {
-          // Keep the token: it may belong to another app build, and deleting
-          // it would lose the device until the app re-registers.
           logger.warn(
             'APNs rejected the device token in both production and sandbox',
             { label: 'Notifications', token: tokenTail(token) }

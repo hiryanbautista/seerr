@@ -11,7 +11,6 @@ import type IOSAgentType from './ios';
 type Env = 'production' | 'sandbox';
 type Outcome = 'ok' | 'BadDeviceToken' | 410 | 'InternalServerError';
 
-// What each environment answers per token; missing means 'ok'.
 let outcomes: Record<Env, Record<string, Outcome>>;
 const calls: { env: Env; tokens: string[] }[] = [];
 
