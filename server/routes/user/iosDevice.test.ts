@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 
 import { getRepository } from '@server/datasource';
+import { User } from '@server/entity/User';
 import { UserIOSDevice } from '@server/entity/UserIOSDevice';
 import { Notification } from '@server/lib/notifications';
 import iOSAgent from '@server/lib/notifications/agents/ios';
@@ -125,8 +126,15 @@ describe('iOS agent', () => {
   it('returns false instead of throwing on a bad APNS_KEY', async () => {
     process.env.APNS_KEY = 'not-a-key';
     try {
+      const user = await getRepository(User).findOneOrFail({
+        where: { email: 'demo@seerr.dev' },
+      });
+      await getRepository(UserIOSDevice).save(
+        new UserIOSDevice({ token: TOKEN, user })
+      );
       const sent = await new iOSAgent().send(Notification.MEDIA_PENDING, {
         subject: 'Test',
+        notifyUser: user,
         notifySystem: false,
         notifyAdmin: false,
       });

@@ -5,9 +5,16 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserIOSDevice } from '@server/entity/UserIOSDevice';
 import { Notification } from '@server/lib/notifications';
+import { Permission } from '@server/lib/permissions';
+import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import { checkUser, isAuthenticated } from '@server/middleware/auth';
+import authRoutes from '@server/routes/auth';
 import { setupTestDb } from '@server/test/db';
-import type IOSAgentType from './ios';
+import express from 'express';
+import session from 'express-session';
+import request from 'supertest';
+import type * as IOSModule from './ios';
 
 type Env = 'production' | 'sandbox';
 type Outcome = 'ok' | 'BadDeviceToken' | 410 | 'InternalServerError';
@@ -54,12 +61,14 @@ mock.module('@parse/node-apn', {
   defaultExport: { Provider: FakeProvider, Notification: class {} },
 });
 
-let iOSAgent: typeof IOSAgentType;
+let ios: typeof IOSModule;
+let iOSAgent: typeof IOSModule.default;
 
 before(async () => {
   process.env.APNS_KEY = 'test-key';
   process.env.APNS_ENV = 'prod';
-  iOSAgent = (await import('./ios')).default;
+  ios = await import('./ios');
+  iOSAgent = ios.default;
 });
 
 setupTestDb();
@@ -187,5 +196,115 @@ describe('iOS agent APNs environments', () => {
       process.env.APNS_ENV = 'prod';
       warn.mock.restore();
     }
+  });
+});
+
+describe('iOS delivery status', () => {
+  it('counts attempts and keeps only the token suffix', () => {
+    const before = ios.getIOSDeliveryStatus();
+    ios.recordIOSDelivery({
+      ok: true,
+      environment: 'production',
+      userId: 1,
+      token: PROD,
+      type: 'MEDIA_AVAILABLE',
+      reason: null,
+    });
+    ios.recordIOSDelivery({
+      ok: false,
+      environment: 'sandbox',
+      userId: 2,
+      token: SANDBOX,
+      type: 'MEDIA_APPROVED',
+      reason: 'BadDeviceToken',
+    });
+    const status = ios.getIOSDeliveryStatus();
+    assert.strictEqual(status.sent, before.sent + 1);
+    assert.strictEqual(status.failed, before.failed + 1);
+    assert.ok(status.lastSuccessAt);
+    assert.deepStrictEqual(
+      { ...status.lastFailure, at: undefined },
+      {
+        at: undefined,
+        reason: 'BadDeviceToken',
+        environment: 'sandbox',
+        userId: 2,
+        token: '…bbbbbb',
+      }
+    );
+    // Newest first, and no full token anywhere.
+    assert.strictEqual(status.recent[0].type, 'MEDIA_APPROVED');
+    assert.strictEqual(status.recent[1].token, '…aaaaaa');
+    assert.ok(!JSON.stringify(status).includes(PROD));
+  });
+
+  it('keeps the last 50 attempts', () => {
+    for (let i = 0; i < 60; i++) {
+      ios.recordIOSDelivery({
+        ok: true,
+        environment: 'production',
+        userId: i,
+        token: PROD,
+        type: 'MEDIA_AVAILABLE',
+        reason: null,
+      });
+    }
+    const { recent } = ios.getIOSDeliveryStatus();
+    assert.strictEqual(recent.length, 50);
+    assert.strictEqual(recent[0].userId, 59);
+  });
+
+  it('records a fallback retry as one attempt with its final outcome', async () => {
+    const before = ios.getIOSDeliveryStatus();
+    outcomes.production[SANDBOX] = 'BadDeviceToken';
+    assert.strictEqual(await sendTest(SANDBOX), true);
+    const status = ios.getIOSDeliveryStatus();
+    assert.strictEqual(status.sent, before.sent + 1);
+    assert.strictEqual(status.failed, before.failed);
+    const { at, userId, ...latest } = status.recent[0];
+    assert.ok(at && userId);
+    assert.deepStrictEqual(latest, {
+      ok: true,
+      environment: 'sandbox',
+      token: '…bbbbbb',
+      type: 'TEST_NOTIFICATION',
+      reason: null,
+    });
+  });
+
+  it('is admin only', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use(
+      session({
+        secret: 'test-secret',
+        resave: false,
+        saveUninitialized: false,
+      })
+    );
+    app.use(checkUser);
+    app.use('/auth', authRoutes);
+    // Imported here so it gets the mocked APNs module.
+    const settingsRoutes = (await import('@server/routes/settings')).default;
+    app.use('/settings', isAuthenticated(Permission.ADMIN), settingsRoutes);
+    getSettings().main.localLogin = true;
+
+    const statusAs = async (email: string) => {
+      const agent = request.agent(app);
+      await agent.post('/auth/local').send({ email, password: 'test1234' });
+      return agent.get('/settings/notifications/ios/status');
+    };
+
+    const admin = await statusAs('admin@seerr.dev');
+    assert.strictEqual(admin.status, 200);
+    assert.deepStrictEqual(Object.keys(admin.body).sort(), [
+      'failed',
+      'lastFailure',
+      'lastSuccessAt',
+      'recent',
+      'sent',
+      'since',
+    ]);
+    assert.strictEqual((await statusAs('demo@seerr.dev')).status, 403);
   });
 });

@@ -60,6 +60,57 @@ const primaryEnv = (): APNsEnv => {
   return 'sandbox';
 };
 
+type DeliveryAttempt = {
+  at: string;
+  ok: boolean;
+  environment: APNsEnv;
+  userId: number;
+  token: string;
+  type: string;
+  reason: string | null;
+};
+
+// In-memory delivery stats for GET /settings/notifications/ios/status; reset on restart.
+const RECENT_LIMIT = 50;
+const delivery = {
+  since: new Date().toISOString(),
+  sent: 0,
+  failed: 0,
+  lastSuccessAt: null as string | null,
+  lastFailure: null as Omit<DeliveryAttempt, 'ok' | 'type'> | null,
+  recent: [] as DeliveryAttempt[],
+};
+
+export const recordIOSDelivery = (
+  attempt: Omit<DeliveryAttempt, 'at'>
+): void => {
+  const entry = {
+    ...attempt,
+    at: new Date().toISOString(),
+    token: tokenTail(attempt.token),
+  };
+  if (entry.ok) {
+    delivery.sent++;
+    delivery.lastSuccessAt = entry.at;
+  } else {
+    delivery.failed++;
+    delivery.lastFailure = {
+      at: entry.at,
+      reason: entry.reason,
+      environment: entry.environment,
+      userId: entry.userId,
+      token: entry.token,
+    };
+  }
+  delivery.recent.unshift(entry);
+  delivery.recent.length = Math.min(delivery.recent.length, RECENT_LIMIT);
+};
+
+export const getIOSDeliveryStatus = () => ({
+  ...delivery,
+  recent: [...delivery.recent],
+});
+
 class iOSAgent
   extends BaseAgent<NotificationAgentConfig>
   implements NotificationAgent
@@ -111,18 +162,23 @@ class iOSAgent
     type: Notification,
     payload: NotificationPayload
   ): Promise<boolean> {
-    try {
-      // Xcode builds have sandbox tokens, so BadDeviceToken retries on the other environment.
-      const primary = primaryEnv();
-      const fallback: APNsEnv =
-        primary === 'production' ? 'sandbox' : 'production';
-      if (!getProvider(primary)) {
-        logger.warn('APNS_KEY is not set; skipping iOS notification', {
-          label: 'Notifications',
-        });
-        return false;
-      }
+    // Xcode builds have sandbox tokens, so BadDeviceToken retries on the other environment.
+    const primary = primaryEnv();
+    const fallback: APNsEnv =
+      primary === 'production' ? 'sandbox' : 'production';
+    let devices: UserIOSDevice[] = [];
+    const record = (
+      device: UserIOSDevice,
+      outcome: { ok: boolean; environment: APNsEnv; reason: string | null }
+    ) =>
+      recordIOSDelivery({
+        ...outcome,
+        userId: device.user.id,
+        token: device.token,
+        type: Notification[type],
+      });
 
+    try {
       const userIds = new Set<number>();
 
       if (
@@ -152,7 +208,7 @@ class iOSAgent
       }
 
       const deviceRepository = getRepository(UserIOSDevice);
-      const devices =
+      devices =
         userIds.size > 0
           ? await deviceRepository.find({
               where: { user: { id: In([...userIds]) } },
@@ -162,6 +218,16 @@ class iOSAgent
       if (devices.length === 0) {
         // A test with no registered device should report failure.
         return type !== Notification.TEST_NOTIFICATION;
+      }
+
+      if (!getProvider(primary)) {
+        logger.warn('APNS_KEY is not set; skipping iOS notification', {
+          label: 'Notifications',
+        });
+        devices.forEach((device) =>
+          record(device, { ok: false, environment: primary, reason: 'NoKey' })
+        );
+        return false;
       }
 
       logger.debug('Sending iOS push notification', {
@@ -181,12 +247,26 @@ class iOSAgent
       note.badge = 0;
       note.topic = APNS_TOPIC;
 
+      // Final outcome per token; a fallback retry overwrites the first try.
+      const outcomes = new Map<
+        string,
+        { ok: boolean; environment: APNsEnv; reason: string | null }
+      >();
       const sendTo = async (env: APNsEnv, tokens: string[]) => {
         const provider = getProvider(env) as apn.Provider;
         const result = await provider.send(note, tokens);
         const badTokens: string[] = [];
+        for (const sent of result.sent) {
+          outcomes.set(sent.device, {
+            ok: true,
+            environment: env,
+            reason: null,
+          });
+        }
         for (const failure of result.failed) {
-          const reason = failure.response?.reason ?? failure.error?.message;
+          const reason =
+            failure.response?.reason ?? failure.error?.message ?? 'Error';
+          outcomes.set(failure.device, { ok: false, environment: env, reason });
           if (failure.status === 410) {
             await deviceRepository.delete({ token: failure.device });
           } else if (reason === 'BadDeviceToken') {
@@ -208,18 +288,16 @@ class iOSAgent
             devices: result.sent.length,
           });
         }
-        return { failed: result.failed.length, badTokens };
+        return badTokens;
       };
 
-      const first = await sendTo(
+      const badTokens = await sendTo(
         primary,
         devices.map((d) => d.token)
       );
-      let failed = first.failed;
-      if (first.badTokens.length > 0) {
-        const retry = await sendTo(fallback, first.badTokens);
-        failed += retry.failed - first.badTokens.length;
-        for (const token of retry.badTokens) {
+      if (badTokens.length > 0) {
+        const stillBad = await sendTo(fallback, badTokens);
+        for (const token of stillBad) {
           logger.warn(
             'APNs rejected the device token in both production and sandbox',
             { label: 'Notifications', token: tokenTail(token) }
@@ -227,12 +305,30 @@ class iOSAgent
         }
       }
 
+      let failed = 0;
+      for (const device of devices) {
+        const outcome = outcomes.get(device.token) ?? {
+          ok: false,
+          environment: primary,
+          reason: 'Error',
+        };
+        record(device, outcome);
+        if (!outcome.ok) {
+          failed++;
+        }
+      }
+      devices = [];
+
       return failed === 0;
     } catch (e) {
       logger.error('Error sending iOS notification', {
         label: 'Notifications',
         errorMessage: e.message,
       });
+      // Devices we were sending to when it failed.
+      devices.forEach((device) =>
+        record(device, { ok: false, environment: primary, reason: 'Error' })
+      );
       return false;
     }
   }
