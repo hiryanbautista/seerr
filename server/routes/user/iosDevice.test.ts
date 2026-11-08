@@ -144,3 +144,50 @@ describe('iOS agent', () => {
     }
   });
 });
+
+describe('notification settings save', () => {
+  const full = {
+    pgpKey: 'pgp-key',
+    discordIds: ['123456'],
+    pushbulletAccessToken: 'pb-token',
+    pushoverApplicationToken: 'po-app',
+    pushoverUserKey: 'po-user',
+    telegramChatId: '42',
+    notificationTypes: { email: 2, ios: 8 },
+  };
+
+  it('keeps fields the body leaves out', async () => {
+    const { agent, url } = await login('demo@seerr.dev');
+    assert.strictEqual((await agent.post(url).send(full)).status, 200);
+
+    const res = await agent
+      .post(url)
+      .send({ iOSDeviceToken: TOKEN, notificationTypes: { ios: 4 } });
+    assert.strictEqual(res.status, 200);
+
+    const saved = (await agent.get(url)).body;
+    assert.strictEqual(saved.pgpKey, 'pgp-key');
+    assert.deepStrictEqual(saved.discordIds, ['123456']);
+    assert.strictEqual(saved.pushbulletAccessToken, 'pb-token');
+    assert.strictEqual(saved.pushoverApplicationToken, 'po-app');
+    assert.strictEqual(saved.pushoverUserKey, 'po-user');
+    assert.strictEqual(saved.telegramChatId, '42');
+    // notificationTypes merges per agent.
+    assert.strictEqual(saved.notificationTypes.email, 2);
+    assert.strictEqual(saved.notificationTypes.ios, 4);
+  });
+
+  it('clears fields sent as null or empty', async () => {
+    const { agent, url } = await login('demo@seerr.dev');
+    await agent.post(url).send(full);
+    await agent
+      .post(url)
+      .send({ pgpKey: null, discordIds: null, telegramChatId: '' });
+
+    const saved = (await agent.get(url)).body;
+    assert.ok(saved.pgpKey == null);
+    assert.deepStrictEqual(saved.discordIds, []);
+    assert.strictEqual(saved.telegramChatId, '');
+    assert.strictEqual(saved.pushoverUserKey, 'po-user');
+  });
+});
