@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 
 import { getRepository } from '@server/datasource';
+import { User } from '@server/entity/User';
 import { UserIOSDevice } from '@server/entity/UserIOSDevice';
+import { UserSettings } from '@server/entity/UserSettings';
 import { Notification } from '@server/lib/notifications';
 import iOSAgent from '@server/lib/notifications/agents/ios';
 import { getSettings } from '@server/lib/settings';
@@ -125,8 +127,15 @@ describe('iOS agent', () => {
   it('returns false instead of throwing on a bad APNS_KEY', async () => {
     process.env.APNS_KEY = 'not-a-key';
     try {
+      const user = await getRepository(User).findOneOrFail({
+        where: { email: 'demo@seerr.dev' },
+      });
+      await getRepository(UserIOSDevice).save(
+        new UserIOSDevice({ token: TOKEN, user })
+      );
       const sent = await new iOSAgent().send(Notification.MEDIA_PENDING, {
         subject: 'Test',
+        notifyUser: user,
         notifySystem: false,
         notifyAdmin: false,
       });
@@ -134,5 +143,75 @@ describe('iOS agent', () => {
     } finally {
       delete process.env.APNS_KEY;
     }
+  });
+});
+
+describe('notification settings save', () => {
+  const full = {
+    pgpKey: 'pgp-key',
+    discordIds: ['123456'],
+    pushbulletAccessToken: 'pb-token',
+    pushoverApplicationToken: 'po-app',
+    pushoverUserKey: 'po-user',
+    telegramChatId: '42',
+    notificationTypes: { email: 2, ios: 8 },
+  };
+
+  it('keeps fields the body leaves out', async () => {
+    const { agent, url } = await login('demo@seerr.dev');
+    assert.strictEqual((await agent.post(url).send(full)).status, 200);
+
+    const res = await agent
+      .post(url)
+      .send({ iOSDeviceToken: TOKEN, notificationTypes: { ios: 4 } });
+    assert.strictEqual(res.status, 200);
+
+    const saved = (await agent.get(url)).body;
+    assert.strictEqual(saved.pgpKey, 'pgp-key');
+    assert.deepStrictEqual(saved.discordIds, ['123456']);
+    assert.strictEqual(saved.pushbulletAccessToken, 'pb-token');
+    assert.strictEqual(saved.pushoverApplicationToken, 'po-app');
+    assert.strictEqual(saved.pushoverUserKey, 'po-user');
+    assert.strictEqual(saved.telegramChatId, '42');
+    // notificationTypes merges per agent.
+    assert.strictEqual(saved.notificationTypes.email, 2);
+    assert.strictEqual(saved.notificationTypes.ios, 4);
+  });
+
+  it('clears fields sent as null or empty', async () => {
+    const { agent, url } = await login('demo@seerr.dev');
+    await agent.post(url).send(full);
+    await agent
+      .post(url)
+      .send({ pgpKey: null, discordIds: null, telegramChatId: '' });
+
+    const saved = (await agent.get(url)).body;
+    assert.ok(saved.pgpKey == null);
+    assert.deepStrictEqual(saved.discordIds, []);
+    assert.strictEqual(saved.telegramChatId, '');
+    assert.strictEqual(saved.pushoverUserKey, 'po-user');
+  });
+
+  // Saving the user cascades the settings row's owner to that user, so this
+  // holds even if the row were built with the requester.
+  it('creates a missing settings row for the edited user, not the admin', async () => {
+    const demo = await getRepository(User).findOneOrFail({
+      where: { email: 'demo@seerr.dev' },
+    });
+    await getRepository(UserSettings).delete({ user: { id: demo.id } });
+
+    const admin = await login('admin@seerr.dev');
+    const demoUrl = `/user/${demo.id}/settings/notifications`;
+    const res = await admin.agent.post(demoUrl).send({ pgpKey: 'demo-key' });
+    assert.strictEqual(res.status, 200);
+
+    assert.strictEqual(
+      (await admin.agent.get(demoUrl)).body.pgpKey,
+      'demo-key'
+    );
+    assert.notStrictEqual(
+      (await admin.agent.get(admin.url)).body.pgpKey,
+      'demo-key'
+    );
   });
 });

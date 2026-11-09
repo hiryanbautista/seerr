@@ -5,7 +5,9 @@ import type { NotificationAgent } from '@server/lib/notifications/agents/agent';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
 import GotifyAgent from '@server/lib/notifications/agents/gotify';
-import iOSAgent from '@server/lib/notifications/agents/ios';
+import iOSAgent, {
+  getIOSDeliveryStatus,
+} from '@server/lib/notifications/agents/ios';
 import NtfyAgent from '@server/lib/notifications/agents/ntfy';
 import PushbulletAgent from '@server/lib/notifications/agents/pushbullet';
 import PushoverAgent from '@server/lib/notifications/agents/pushover';
@@ -446,6 +448,14 @@ notificationRoutes.post('/ios', async (req, res) => {
   await settings.save();
 
   res.status(200).json(settings.notifications.agents.ios);
+});
+
+notificationRoutes.get('/ios/status', async (_req, res, next) => {
+  try {
+    res.status(200).json(await getIOSDeliveryStatus());
+  } catch (e) {
+    next({ status: 500, message: e.message });
+  }
 });
 
 notificationRoutes.post('/ios/test', async (req, res, next) => {

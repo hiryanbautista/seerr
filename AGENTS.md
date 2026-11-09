@@ -15,7 +15,9 @@ It replaces the old Overseerr fork at `../overseerr` and backs the iOS app at `.
 - Token table: `server/entity/UserIOSDevice.ts` (added to the entity list in `server/datasource.ts`), plus migration `server/migration/sqlite/1793329975544-AddUserIOSDevice.ts`. Tokens live in their own table on purpose: SQLite migrations rebuild `user_settings` and would drop any column we add there.
 - `ios` notification key in `server/lib/settings/index.ts` and `server/entity/UserSettings.ts`.
 - Routes: `/settings/notifications/ios[/test]` in `server/routes/settings/notifications.ts`. `iOSDeviceToken` (hex, 64–200 chars, stored lowercase) is accepted and returned by `/user/{id}/settings/notifications`; `DELETE /user/{id}/settings/notifications/ios-device` `{token}` removes one device (`server/routes/user/usersettings.ts`).
+- `POST /user/{id}/settings/notifications` saves partially: absent fields are unchanged, present ones (even null/empty) are set, `notificationTypes` merges per agent. Upstream overwrites every field (and empties `discordIds`) on each save.
 - Spec: `seerr-api.yml` (`iOSSettings`, the paths above, `iOSDeviceToken`, `NotificationAgentTypes.ios`). The OpenAPI validator rejects anything that isn't in the spec.
+- iOS push delivery log: `server/entity/IOSPushDelivery.ts` (table `ios_push_delivery`, no FK to user, token suffix only), migrations `1794186501446-AddIOSPushDelivery` (sqlite) and `1794186548573-AddIOSPushDelivery` (postgres). Written by `ios.ts`, pruned to 30 days on insert, read by `GET /settings/notifications/ios/status`.
 - `.github/workflows/docker-image.yml`.
 - Local discovery (mDNS `_seerr._tcp`, TXT `id`/`name`/`url`/`v`): `server/lib/localDiscovery.ts`, started in `server/index.ts`, re-synced on `/settings/main` and `/settings/network` saves. Setting `network.localDiscovery` (default true; spec, settings types, Settings → Network toggle). Needs host networking in Docker; `PORT` sets the listen port; `MDNS_INTERFACE` (comma-separated) pins interfaces; default is every interface, so set it on hosts with VPN/Docker/VM interfaces. ciao can `process.exit(1)` if a re-announce fails after an interface change; pinning the interface limits it.
 
@@ -41,6 +43,7 @@ Node `^22.19` (engine-strict). nvm has 22.23.4; run `nvm use 22.23.4` first. pnp
 - Image `ryanbautista97/seerr-ios`, port 5055, config in `/app/config` (`settings.json`, `db/db.sqlite3`).
 - **The container runs as `node` (uid 1000), not root.** The host config dir must be writable by uid 1000.
 - Env: `APNS_KEY` (p8 body, `\n` escaped) and `APNS_ENV=prod` for production APNs (any other value means sandbox). Key ID, Team ID and topic are constants in `ios.ts`.
+- APNs fallback: pushes go to the `APNS_ENV` environment first; a device answered with `BadDeviceToken` is retried once on the other environment (same key), so Xcode builds (sandbox tokens) and TestFlight/App Store builds (production tokens) both work. 410 removes the token in either.
 - Repo variables `SEERR_MAJOR`/`SEERR_MINOR` and secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `REPO_ACCESS_TOKEN` need to be set on hiryanbautista/seerr. Once Actions is enabled, disable every upstream workflow except Docker Image CI (`gh workflow disable -R hiryanbautista/seerr <name>`).
 
 ## Orchestrator context sync
