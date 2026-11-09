@@ -3891,7 +3891,7 @@ paths:
   /settings/notifications/ios/status:
     get:
       summary: Get iOS push delivery status
-      description: Per-device APNs send results since the server started (in memory, reset on restart). The last 50 attempts are listed newest first. Tokens show only their last 6 characters.
+      description: Per-device APNs send results, stored in the database and kept for 30 days. `since` is the oldest kept attempt (or now when there are none); `sent` and `failed` count the kept attempts. The last 50 attempts are listed newest first. Tokens show only their last 6 characters.
       tags:
         - settings
       responses:

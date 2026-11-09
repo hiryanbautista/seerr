@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { before, beforeEach, describe, it, mock } from 'node:test';
 
 import { getRepository } from '@server/datasource';
+import { IOSPushDelivery } from '@server/entity/IOSPushDelivery';
 import { User } from '@server/entity/User';
 import { UserIOSDevice } from '@server/entity/UserIOSDevice';
 import { Notification } from '@server/lib/notifications';
@@ -200,25 +201,29 @@ describe('iOS agent APNs environments', () => {
 });
 
 describe('iOS delivery status', () => {
-  it('counts attempts and keeps only the token suffix', () => {
-    const before = ios.getIOSDeliveryStatus();
-    ios.recordIOSDelivery({
-      ok: true,
-      environment: 'production',
-      userId: 1,
-      token: PROD,
-      type: 'MEDIA_AVAILABLE',
-      reason: null,
-    });
-    ios.recordIOSDelivery({
-      ok: false,
-      environment: 'sandbox',
-      userId: 2,
-      token: SANDBOX,
-      type: 'MEDIA_APPROVED',
-      reason: 'BadDeviceToken',
-    });
-    const status = ios.getIOSDeliveryStatus();
+  it('counts attempts and keeps only the token suffix', async () => {
+    const before = await ios.getIOSDeliveryStatus();
+    await ios.recordIOSDeliveries([
+      {
+        ok: true,
+        environment: 'production',
+        userId: 1,
+        token: PROD,
+        type: 'MEDIA_AVAILABLE',
+        reason: null,
+      },
+    ]);
+    await ios.recordIOSDeliveries([
+      {
+        ok: false,
+        environment: 'sandbox',
+        userId: 2,
+        token: SANDBOX,
+        type: 'MEDIA_APPROVED',
+        reason: 'BadDeviceToken',
+      },
+    ]);
+    const status = await ios.getIOSDeliveryStatus();
     assert.strictEqual(status.sent, before.sent + 1);
     assert.strictEqual(status.failed, before.failed + 1);
     assert.ok(status.lastSuccessAt);
@@ -238,27 +243,29 @@ describe('iOS delivery status', () => {
     assert.ok(!JSON.stringify(status).includes(PROD));
   });
 
-  it('keeps the last 50 attempts', () => {
+  it('keeps the last 50 attempts', async () => {
     for (let i = 0; i < 60; i++) {
-      ios.recordIOSDelivery({
-        ok: true,
-        environment: 'production',
-        userId: i,
-        token: PROD,
-        type: 'MEDIA_AVAILABLE',
-        reason: null,
-      });
+      await ios.recordIOSDeliveries([
+        {
+          ok: true,
+          environment: 'production',
+          userId: i,
+          token: PROD,
+          type: 'MEDIA_AVAILABLE',
+          reason: null,
+        },
+      ]);
     }
-    const { recent } = ios.getIOSDeliveryStatus();
+    const { recent } = await ios.getIOSDeliveryStatus();
     assert.strictEqual(recent.length, 50);
     assert.strictEqual(recent[0].userId, 59);
   });
 
   it('records a fallback retry as one attempt with its final outcome', async () => {
-    const before = ios.getIOSDeliveryStatus();
+    const before = await ios.getIOSDeliveryStatus();
     outcomes.production[SANDBOX] = 'BadDeviceToken';
     assert.strictEqual(await sendTest(SANDBOX), true);
-    const status = ios.getIOSDeliveryStatus();
+    const status = await ios.getIOSDeliveryStatus();
     assert.strictEqual(status.sent, before.sent + 1);
     assert.strictEqual(status.failed, before.failed);
     const { at, userId, ...latest } = status.recent[0];
@@ -273,10 +280,10 @@ describe('iOS delivery status', () => {
   });
 
   it('records a partial failure across two devices', async () => {
-    const before = ios.getIOSDeliveryStatus();
+    const before = await ios.getIOSDeliveryStatus();
     outcomes.production[SANDBOX] = 'InternalServerError';
     assert.strictEqual(await sendTest(PROD, SANDBOX), false);
-    const status = ios.getIOSDeliveryStatus();
+    const status = await ios.getIOSDeliveryStatus();
     assert.strictEqual(status.sent, before.sent + 1);
     assert.strictEqual(status.failed, before.failed + 1);
     assert.strictEqual(status.lastFailure?.reason, 'InternalServerError');
@@ -284,14 +291,14 @@ describe('iOS delivery status', () => {
   });
 
   it('records NoKey once per device', async () => {
-    const before = ios.getIOSDeliveryStatus();
+    const before = await ios.getIOSDeliveryStatus();
     delete process.env.APNS_KEY;
     try {
       assert.strictEqual(await sendTest(PROD, SANDBOX), false);
     } finally {
       process.env.APNS_KEY = 'test-key';
     }
-    const status = ios.getIOSDeliveryStatus();
+    const status = await ios.getIOSDeliveryStatus();
     assert.strictEqual(status.failed, before.failed + 2);
     assert.deepStrictEqual(
       status.recent.slice(0, 2).map((r) => r.reason),
@@ -301,7 +308,7 @@ describe('iOS delivery status', () => {
   });
 
   it('keeps reported outcomes when sending throws midway', async () => {
-    const before = ios.getIOSDeliveryStatus();
+    const before = await ios.getIOSDeliveryStatus();
     outcomes.production[SANDBOX] = 410;
     const remove = mock.method(
       getRepository(UserIOSDevice),
@@ -315,7 +322,7 @@ describe('iOS delivery status', () => {
     } finally {
       remove.mock.restore();
     }
-    const status = ios.getIOSDeliveryStatus();
+    const status = await ios.getIOSDeliveryStatus();
     assert.strictEqual(status.sent, before.sent + 1);
     assert.strictEqual(status.failed, before.failed + 1);
     const byToken = Object.fromEntries(
@@ -325,6 +332,96 @@ describe('iOS delivery status', () => {
       '…aaaaaa': [true, null],
       '…bbbbbb': [false, 'Unregistered'],
     });
+  });
+
+  it('persists rows with only the token suffix', async () => {
+    await ios.recordIOSDeliveries([
+      {
+        ok: true,
+        environment: 'production',
+        userId: 1,
+        token: PROD,
+        type: 'MEDIA_AVAILABLE',
+        reason: null,
+      },
+    ]);
+    const rows = await getRepository(IOSPushDelivery).find();
+    assert.deepStrictEqual(
+      rows.map((r) => r.tokenSuffix),
+      ['aaaaaa']
+    );
+    const status = await ios.getIOSDeliveryStatus();
+    assert.strictEqual(status.since, rows[0].createdAt.toISOString());
+    assert.ok(Math.abs(Date.parse(status.recent[0].at) - Date.now()) < 60_000);
+  });
+
+  it('reports an empty table', async () => {
+    const status = await ios.getIOSDeliveryStatus();
+    assert.deepStrictEqual(
+      { ...status, since: undefined },
+      {
+        since: undefined,
+        sent: 0,
+        failed: 0,
+        lastSuccessAt: null,
+        lastFailure: null,
+        recent: [],
+      }
+    );
+    assert.ok(Math.abs(Date.parse(status.since) - Date.now()) < 60_000);
+  });
+
+  it('prunes rows older than 30 days on insert', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const repository = getRepository(IOSPushDelivery);
+    const row = (daysAgo: number) =>
+      new IOSPushDelivery({
+        createdAt: new Date(Date.now() - daysAgo * day),
+        ok: true,
+        environment: 'production',
+        userId: 1,
+        tokenSuffix: 'aaaaaa',
+        type: 'MEDIA_AVAILABLE',
+        reason: null,
+      });
+    await repository.save([row(31), row(29)]);
+    await ios.recordIOSDeliveries([
+      {
+        ok: true,
+        environment: 'production',
+        userId: 1,
+        token: PROD,
+        type: 'MEDIA_AVAILABLE',
+        reason: null,
+      },
+    ]);
+    assert.strictEqual(await repository.count(), 2);
+    const status = await ios.getIOSDeliveryStatus();
+    assert.strictEqual(status.sent, 2);
+    const age = Date.now() - Date.parse(status.since);
+    assert.ok(age > 28 * day && age < 30 * day);
+  });
+
+  it('still sends when the delivery log write fails', async () => {
+    const insert = mock.method(
+      getRepository(IOSPushDelivery),
+      'insert',
+      async () => {
+        throw new Error('disk full');
+      }
+    );
+    const warn = mock.method(logger, 'warn');
+    try {
+      assert.strictEqual(await sendTest(PROD), true);
+      assert.ok(
+        warn.mock.calls.some((c) =>
+          String(c.arguments[0]).includes('record iOS push delivery')
+        )
+      );
+    } finally {
+      insert.mock.restore();
+      warn.mock.restore();
+    }
   });
 
   it('is admin only', async () => {

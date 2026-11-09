@@ -3,12 +3,13 @@ import apn from '@parse/node-apn';
 import { IssueType, IssueTypeName } from '@server/constants/issue';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
+import { IOSPushDelivery } from '@server/entity/IOSPushDelivery';
 import { User } from '@server/entity/User';
 import { UserIOSDevice } from '@server/entity/UserIOSDevice';
 import type { NotificationAgentConfig } from '@server/lib/settings';
 import { NotificationAgentKey, getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
-import { In } from 'typeorm';
+import { In, LessThan } from 'typeorm';
 import { Notification, shouldSendAdminNotification } from '..';
 import type { NotificationAgent, NotificationPayload } from './agent';
 import { BaseAgent } from './agent';
@@ -61,52 +62,88 @@ const primaryEnv = (): APNsEnv => {
 };
 
 type DeliveryAttempt = {
-  at: string;
   ok: boolean;
   environment: APNsEnv;
-  userId: number;
+  userId: number | null;
   token: string;
-  type: string;
+  type: string | null;
   reason: string | null;
 };
 
-// In-memory delivery stats for GET /settings/notifications/ios/status; reset on restart.
 const RECENT_LIMIT = 50;
-const delivery = {
-  since: new Date().toISOString(),
-  sent: 0,
-  failed: 0,
-  lastSuccessAt: null as string | null,
-  lastFailure: null as Omit<DeliveryAttempt, 'ok' | 'type'> | null,
-  recent: [] as DeliveryAttempt[],
-};
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-export const recordIOSDelivery = (
-  attempt: Omit<DeliveryAttempt, 'at'>
-): void => {
-  const entry = {
-    ...attempt,
-    at: new Date().toISOString(),
-    token: tokenTail(attempt.token),
-  };
-  if (entry.ok) {
-    delivery.sent++;
-    delivery.lastSuccessAt = entry.at;
-  } else {
-    delivery.failed++;
-    delivery.lastFailure = {
-      at: entry.at,
-      reason: entry.reason,
-      environment: entry.environment,
-      userId: entry.userId,
-      token: entry.token,
-    };
+// Logging must never fail the send: errors only warn.
+export const recordIOSDeliveries = async (
+  attempts: DeliveryAttempt[]
+): Promise<void> => {
+  if (attempts.length === 0) {
+    return;
   }
-  delivery.recent.unshift(entry);
-  delivery.recent.length = Math.min(delivery.recent.length, RECENT_LIMIT);
+  try {
+    const repository = getRepository(IOSPushDelivery);
+    const now = new Date();
+    await repository.insert(
+      attempts.map(
+        ({ token, ...attempt }) =>
+          new IOSPushDelivery({
+            ...attempt,
+            createdAt: now,
+            tokenSuffix: token.slice(-6),
+          })
+      )
+    );
+    await repository.delete({
+      createdAt: LessThan(new Date(now.getTime() - RETENTION_MS)),
+    });
+  } catch (e) {
+    logger.warn('Failed to record iOS push delivery', {
+      label: 'Notifications',
+      errorMessage: e.message,
+    });
+  }
 };
 
-export const getIOSDeliveryStatus = () => structuredClone(delivery);
+const toAttempt = (row: IOSPushDelivery) => ({
+  at: row.createdAt.toISOString(),
+  ok: row.ok,
+  environment: row.environment,
+  userId: row.userId,
+  token: `…${row.tokenSuffix}`,
+  type: row.type,
+  reason: row.reason,
+});
+
+export const getIOSDeliveryStatus = async () => {
+  const repository = getRepository(IOSPushDelivery);
+  const newest = { id: 'DESC' } as const;
+  const [sent, failed, [oldest], [lastSuccess], [lastFailure], recent] =
+    await Promise.all([
+      repository.count({ where: { ok: true } }),
+      repository.count({ where: { ok: false } }),
+      repository.find({ order: { id: 'ASC' }, take: 1 }),
+      repository.find({ where: { ok: true }, order: newest, take: 1 }),
+      repository.find({ where: { ok: false }, order: newest, take: 1 }),
+      repository.find({ order: newest, take: RECENT_LIMIT }),
+    ]);
+  const failure = lastFailure && toAttempt(lastFailure);
+  return {
+    since: (oldest?.createdAt ?? new Date()).toISOString(),
+    sent,
+    failed,
+    lastSuccessAt: lastSuccess?.createdAt.toISOString() ?? null,
+    lastFailure: failure
+      ? {
+          at: failure.at,
+          reason: failure.reason,
+          environment: failure.environment,
+          userId: failure.userId,
+          token: failure.token,
+        }
+      : null,
+    recent: recent.map(toAttempt),
+  };
+};
 
 class iOSAgent
   extends BaseAgent<NotificationAgentConfig>
@@ -169,11 +206,12 @@ class iOSAgent
       string,
       { ok: boolean; environment: APNsEnv; reason: string | null }
     >();
+    const attempts: DeliveryAttempt[] = [];
     const record = (
       device: UserIOSDevice,
       outcome: { ok: boolean; environment: APNsEnv; reason: string | null }
     ) =>
-      recordIOSDelivery({
+      attempts.push({
         ...outcome,
         userId: device.user.id,
         token: device.token,
@@ -334,6 +372,8 @@ class iOSAgent
         )
       );
       return false;
+    } finally {
+      await recordIOSDeliveries(attempts);
     }
   }
 }

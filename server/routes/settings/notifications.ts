@@ -450,8 +450,12 @@ notificationRoutes.post('/ios', async (req, res) => {
   res.status(200).json(settings.notifications.agents.ios);
 });
 
-notificationRoutes.get('/ios/status', (_req, res) => {
-  res.status(200).json(getIOSDeliveryStatus());
+notificationRoutes.get('/ios/status', async (_req, res, next) => {
+  try {
+    res.status(200).json(await getIOSDeliveryStatus());
+  } catch (e) {
+    next({ status: 500, message: e.message });
+  }
 });
 
 notificationRoutes.post('/ios/test', async (req, res, next) => {
