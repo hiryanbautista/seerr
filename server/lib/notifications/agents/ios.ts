@@ -116,12 +116,12 @@ const toAttempt = (row: IOSPushDelivery) => ({
 
 export const getIOSDeliveryStatus = async () => {
   const repository = getRepository(IOSPushDelivery);
-  const newest = { id: 'DESC' } as const;
+  const newest = { createdAt: 'DESC', id: 'DESC' } as const;
   const [sent, failed, [oldest], [lastSuccess], [lastFailure], recent] =
     await Promise.all([
       repository.count({ where: { ok: true } }),
       repository.count({ where: { ok: false } }),
-      repository.find({ order: { id: 'ASC' }, take: 1 }),
+      repository.find({ order: { createdAt: 'ASC', id: 'ASC' }, take: 1 }),
       repository.find({ where: { ok: true }, order: newest, take: 1 }),
       repository.find({ where: { ok: false }, order: newest, take: 1 }),
       repository.find({ order: newest, take: RECENT_LIMIT }),

@@ -402,6 +402,32 @@ describe('iOS delivery status', () => {
     assert.ok(age > 28 * day && age < 30 * day);
   });
 
+  it('orders by createdAt, not insert order', async () => {
+    const row = (createdAt: Date, tokenSuffix: string) =>
+      new IOSPushDelivery({
+        createdAt,
+        ok: true,
+        environment: 'production',
+        userId: 1,
+        tokenSuffix,
+        type: 'MEDIA_AVAILABLE',
+        reason: null,
+      });
+    const now = Date.now();
+    // The newer attempt gets the lower id.
+    await getRepository(IOSPushDelivery).save(row(new Date(now), 'newer1'));
+    await getRepository(IOSPushDelivery).save(
+      row(new Date(now - 60_000), 'older1')
+    );
+    const status = await ios.getIOSDeliveryStatus();
+    assert.deepStrictEqual(
+      status.recent.map((r) => r.token),
+      ['…newer1', '…older1']
+    );
+    assert.strictEqual(status.lastSuccessAt, new Date(now).toISOString());
+    assert.strictEqual(status.since, new Date(now - 60_000).toISOString());
+  });
+
   it('still sends when the delivery log write fails', async () => {
     const insert = mock.method(
       getRepository(IOSPushDelivery),
