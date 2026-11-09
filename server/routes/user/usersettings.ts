@@ -708,7 +708,7 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
       if ('discordIds' in body) {
         user.settings.discordIds = Array.isArray(body.discordIds)
           ? body.discordIds.filter((id: string) => id !== '')
-          : body.discordIds;
+          : [];
       }
       if (body.notificationTypes) {
         user.settings.notificationTypes = {

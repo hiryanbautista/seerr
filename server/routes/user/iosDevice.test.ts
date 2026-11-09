@@ -4,6 +4,7 @@ import { before, describe, it } from 'node:test';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserIOSDevice } from '@server/entity/UserIOSDevice';
+import { UserSettings } from '@server/entity/UserSettings';
 import { Notification } from '@server/lib/notifications';
 import iOSAgent from '@server/lib/notifications/agents/ios';
 import { getSettings } from '@server/lib/settings';
@@ -189,5 +190,28 @@ describe('notification settings save', () => {
     assert.deepStrictEqual(saved.discordIds, []);
     assert.strictEqual(saved.telegramChatId, '');
     assert.strictEqual(saved.pushoverUserKey, 'po-user');
+  });
+
+  // Saving the user cascades the settings row's owner to that user, so this
+  // holds even if the row were built with the requester.
+  it('creates a missing settings row for the edited user, not the admin', async () => {
+    const demo = await getRepository(User).findOneOrFail({
+      where: { email: 'demo@seerr.dev' },
+    });
+    await getRepository(UserSettings).delete({ user: { id: demo.id } });
+
+    const admin = await login('admin@seerr.dev');
+    const demoUrl = `/user/${demo.id}/settings/notifications`;
+    const res = await admin.agent.post(demoUrl).send({ pgpKey: 'demo-key' });
+    assert.strictEqual(res.status, 200);
+
+    assert.strictEqual(
+      (await admin.agent.get(demoUrl)).body.pgpKey,
+      'demo-key'
+    );
+    assert.notStrictEqual(
+      (await admin.agent.get(admin.url)).body.pgpKey,
+      'demo-key'
+    );
   });
 });
