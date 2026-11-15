@@ -1,5 +1,6 @@
 import { Blocklist } from '@server/entity/Blocklist';
 import DiscoverSlider from '@server/entity/DiscoverSlider';
+import { IOSPushDelivery } from '@server/entity/IOSPushDelivery';
 import Issue from '@server/entity/Issue';
 import IssueComment from '@server/entity/IssueComment';
 import Media from '@server/entity/Media';
@@ -39,6 +40,7 @@ const entities = [
   User,
   UserPushSubscription,
   UserIOSDevice,
+  IOSPushDelivery,
   UserSettings,
   Watchlist,
 ];

@@ -37,6 +37,17 @@ const parseIOSDeviceToken = (value: unknown): string | undefined | false => {
   return /^[0-9a-f]{64,200}$/.test(token) ? token : false;
 };
 
+const NOTIFICATION_FIELDS = [
+  'pgpKey',
+  'pushbulletAccessToken',
+  'pushoverApplicationToken',
+  'pushoverUserKey',
+  'pushoverSound',
+  'telegramChatId',
+  'telegramMessageThreadId',
+  'telegramSendSilently',
+] as const;
+
 const userSettingsRoutes = Router({ mergeParams: true });
 
 userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
@@ -682,39 +693,28 @@ userSettingsRoutes.post<{ id: string }, UserSettingsNotificationsResponse>(
         return next({ status: 400, message: 'Invalid iOSDeviceToken.' });
       }
 
-      const discordIds =
-        req.body.discordIds?.filter((id: string) => id !== '') ?? [];
-
-      if (!user.settings) {
-        user.settings = new UserSettings({
-          user: req.user,
-          pgpKey: req.body.pgpKey,
-          discordIds,
-          pushbulletAccessToken: req.body.pushbulletAccessToken,
-          pushoverApplicationToken: req.body.pushoverApplicationToken,
-          pushoverUserKey: req.body.pushoverUserKey,
-          telegramChatId: req.body.telegramChatId,
-          telegramMessageThreadId: req.body.telegramMessageThreadId,
-          telegramSendSilently: req.body.telegramSendSilently,
-          notificationTypes: req.body.notificationTypes,
-        });
-      } else {
-        user.settings.pgpKey = req.body.pgpKey;
-        user.settings.discordIds = discordIds;
-        user.settings.pushbulletAccessToken = req.body.pushbulletAccessToken;
-        user.settings.pushoverApplicationToken =
-          req.body.pushoverApplicationToken;
-        user.settings.pushoverUserKey = req.body.pushoverUserKey;
-        user.settings.pushoverSound = req.body.pushoverSound;
-        user.settings.telegramChatId = req.body.telegramChatId;
-        user.settings.telegramMessageThreadId =
-          req.body.telegramMessageThreadId;
-        user.settings.telegramSendSilently = req.body.telegramSendSilently;
-        user.settings.notificationTypes = Object.assign(
-          {},
-          user.settings.notificationTypes,
-          req.body.notificationTypes
-        );
+      // Absent fields stay as they are; present ones (even null or '') are set.
+      const body = req.body;
+      user.settings ??= new UserSettings({ user });
+      Object.assign(
+        user.settings,
+        Object.fromEntries(
+          NOTIFICATION_FIELDS.filter((field) => field in body).map((field) => [
+            field,
+            body[field],
+          ])
+        )
+      );
+      if ('discordIds' in body) {
+        user.settings.discordIds = Array.isArray(body.discordIds)
+          ? body.discordIds.filter((id: string) => id !== '')
+          : [];
+      }
+      if (body.notificationTypes) {
+        user.settings.notificationTypes = {
+          ...user.settings.notificationTypes,
+          ...body.notificationTypes,
+        };
       }
 
       await userRepository.save(user);

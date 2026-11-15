@@ -3888,6 +3888,78 @@ paths:
       responses:
         '204':
           description: Test notification attempted
+  /settings/notifications/ios/status:
+    get:
+      summary: Get iOS push delivery status
+      description: Per-device APNs send results, stored in the database and kept for 30 days. `since` is the oldest kept attempt (or now when there are none); `sent` and `failed` count the kept attempts. The last 50 attempts are listed newest first. Tokens show only their last 6 characters.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Delivery status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [since, sent, failed, lastSuccessAt, lastFailure, recent]
+                properties:
+                  since:
+                    type: string
+                    format: date-time
+                  sent:
+                    type: integer
+                  failed:
+                    type: integer
+                  lastSuccessAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  lastFailure:
+                    type: object
+                    nullable: true
+                    required: [at, reason, environment, userId, token]
+                    properties:
+                      at:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                        example: BadDeviceToken
+                      environment:
+                        type: string
+                        enum: [production, sandbox]
+                      userId:
+                        type: integer
+                      token:
+                        type: string
+                        example: …a1b2c3
+                  recent:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        [at, ok, environment, userId, token, type, reason]
+                      properties:
+                        at:
+                          type: string
+                          format: date-time
+                        ok:
+                          type: boolean
+                        environment:
+                          type: string
+                          enum: [production, sandbox]
+                        userId:
+                          type: integer
+                        token:
+                          type: string
+                          example: …a1b2c3
+                        type:
+                          type: string
+                          example: MEDIA_AVAILABLE
+                        reason:
+                          type: string
+                          nullable: true
   /settings/notifications/webhook:
     get:
       summary: Get webhook notification settings
