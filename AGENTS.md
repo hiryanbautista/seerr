@@ -44,5 +44,38 @@ Node `^22.19` (engine-strict). nvm has 22.23.4; run `nvm use 22.23.4` first. pnp
 - Repo variables `SEERR_MAJOR`/`SEERR_MINOR` and secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `REPO_ACCESS_TOKEN` need to be set on hiryanbautista/seerr. Once Actions is enabled, disable every upstream workflow except Docker Image CI (`gh workflow disable -R hiryanbautista/seerr <name>`).
 
 ## Orchestrator context sync
-- After a direct task that changes API endpoints, entities/migrations, auth, conventions, or deployment, `t3_thread_send` the orchestrator (thread 22b9b0da-e70b-4886-8441-ab5aa773f00e) a replacement for the affected sections of `context/server-context.md`.
-- When the orchestrator asks for changes since your last context update, reply with them or "none".
+
+Threads are short-lived and settled after each task, so there is no standing
+orchestrator or peer thread to find. Don't use `ListAgents`, `SendMessage`, or a
+remembered thread ID. Reach other agents by T3 project ID:
+
+| Agent | T3 project ID |
+|---|---|
+| Orchestrator | `76f6ca78-42d1-41cb-b060-4219fafd3267` |
+| iOS (Overseerr) | `552d85a8-7098-473d-93ed-ef79e432be28` |
+| Server (seerr) | `c9fc4a2e-5310-40a7-84fe-2977014ad94f` |
+
+- **Context file:** after a direct task that changes API endpoints, entities/migrations, auth, conventions, or deployment, edit
+  `/Users/ryanbautista/Developer/Overseerr(v3)/orch/context/server-context.md` yourself. Replace the affected
+  sections in place, and don't append dated logs. No message is needed.
+- **Orchestrator task:** when a brief came from the orchestrator, report to
+  the orchestrator thread ID given in that brief with `t3_thread_send`
+  (mode `queue`).
+- **No live orchestrator:** if that send fails, or you need a cross-repo
+  decision during a direct task, use `t3_thread_launch` with the
+  orchestrator's projectId, title `report: <topic>`, and a self-contained
+  message (what happened, files/PR, the decision needed, any spec path). Tell
+  Ryan the returned link.
+- **Direct peer questions (read-only):** to look something up in another
+  repo (a column's meaning, a payload shape, where something lives), use
+  `t3_thread_launch` with that peer's projectId, title `question: <topic>`,
+  and a self-contained question. Include "Read-only: change nothing. Reply
+  with `t3_thread_send` (mode `queue`) to thread `<your thread ID>`". Get your
+  thread ID from `orchestrator_capabilities` (`parentThreadId`). Anything that
+  would change a contract between repos (endpoints, schemas, payloads,
+  shared tables) goes to the orchestrator instead, never peer to peer.
+- **Answering a peer question:** answer from the code without changing
+  anything, reply to the thread ID given, and stop. If the honest answer is
+  "this needs a contract change", say so and point the asker to the
+  orchestrator.
+- When asked for changes since your last context update, reply with them or "none".
